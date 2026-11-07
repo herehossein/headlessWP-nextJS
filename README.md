@@ -1,12 +1,28 @@
-# راهنمای جامع توسعه Headless WordPress با Next.js
+# راهنمای جامع توسعه Headless WordPress با Next.js (نسخه ۲)
 
-[![Next.js 16](<https://img.shields.io/badge/Next.js-16%20(App%20Router)-black?style=flat&logo=next.js>)](https://nextjs.org/)
+[![Next.js 16.4.5](https://img.shields.io/badge/Next.js-16.4.5%20(App%20Router)-black?style=flat&logo=next.js)](https://nextjs.org/)
 [![React 19](https://img.shields.io/badge/React-19-61DAFB?style=flat&logo=react)](https://react.dev/)
-[![WordPress](https://img.shields.io/badge/WordPress-Headless-21759B?style=flat&logo=wordpress)](https://wordpress.org/)
-[![WPGraphQL](https://img.shields.io/badge/WPGraphQL-Latest-E10098?style=flat&logo=graphql)](https://www.wpgraphql.com/)
+[![WordPress 7.1.4](https://img.shields.io/badge/WordPress-7.1.4-21759B?style=flat&logo=wordpress)](https://wordpress.org/)
+[![PHP 8.5.12](https://img.shields.io/badge/PHP-8.5.12-777BB4?style=flat&logo=php)](https://www.php.net/)
+[![GraphQL 17.0.1](https://img.shields.io/badge/GraphQL-17.0.1-E10098?style=flat&logo=graphql)](https://graphql.org/)
+[![Apollo Client 4.3.7](https://img.shields.io/badge/Apollo%20Client-4.3.7-311C87?style=flat&logo=apollographql)](https://www.apollographql.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-این پروژه، یک راهنمای جامع و صنعتی (Production-Ready) در قالب یک **کتاب ۱۴ فصلی** برای ساخت وب‌سایت‌های مدرن، سریع و ایمن با معماری بدون‌سر (Headless) است. در این معماری، **وردپرس** به عنوان پنل مدیریت محتوا (Content Hub) و **Next.js (با App Router و Server Actions)** به عنوان فرانت‌اند فوق‌سریع عمل می‌کنند.
+این پروژه، یک راهنمای جامع، صنعتی و بدون وابستگی‌های اضافی در قالب یک **کتاب ۱۴ فصلی** برای ساخت وب‌سایت‌های مدرن، سریع و فوق‌العاده امن با معماری Headless است.
+
+در این معماری، **وردپرس 7.1.4** و **PHP 8.5.12** با رویکرد **حداقل پلاگین (Minimal Plugins)** صرفاً به عنوان پایگاه داده و پنل مدیریت عمل می‌کنند و **Next.js 16.4.5 (با App Router و Server Actions)** با اتصال مستقیم از طریق **GraphQL 17.0.1** و کلاینت استاندارد **Apollo Client 4.3.7** وظیفه رندر و ارائه فرانت‌اند را با نهایت کارایی بر عهده دارند.
+
+---
+
+## 🛠️ مشخصات فنی و نسخه‌های استاندارد
+
+| فناوری / ابزار | نسخه هدف | نقش در پروژه |
+|---|---|---|
+| **Next.js** | `16.4.5` | فریم‌ورک فرانت‌اند، App Router، رندرینگ سروری (RSC) و Server Actions |
+| **WordPress** | `7.1.4` | پایگاه محتوا و مدیریت داده (بدون قالب، با رویکرد ایزوله و حداقل پلاگین) |
+| **PHP** | `8.5.12` | ران‌تایم پردازش وردپرس، پیکربندی شده با بهینه‌سازی‌های OPcache |
+| **GraphQL** | `17.0.1` | زبان کوئری و ساختار Schema ارتباطی میان فرانت‌اند و بک‌اند |
+| **Apollo Client** | `4.3.7` | کلاینت اصلی مدیریت داده در Next.js برای Server Components و کلاینت |
 
 ---
 
@@ -15,9 +31,9 @@
 ```mermaid
 flowchart LR
     A["کاربر / مرورگر"] <-->|"دریافت صفحات در چند میلی‌ثانیه"| B["Edge CDN / Data Cache"]
-    B <--> C["Next.js (App Router + Server Components)"]
-    C <-->|"کوئری‌های بهینه GraphQL"| D["WPGraphQL (روی وردپرس)"]
-    D <--> E[(دیتابیس MySQL)]
+    B <--> C["Next.js 16.4.5 (App Router + RSC)"]
+    C <-->|"Apollo Client 4.3.7 (کوئری‌های تایپ‌شده)"| D["WPGraphQL (روی وردپرس 7.1.4)"]
+    D <--> E[(دیتابیس MySQL / PHP 8.5.12)]
     F["ادمین محتوا"] -->|"پیشخوان وردپرس (cms.domain.com)"| D
     D -.->|"وب‌هوک رویدادمحور On-Demand Revalidation"| C
 ```
@@ -26,40 +42,39 @@ flowchart LR
 
 ## 📚 سرفصل‌های کتاب راهنما
 
-تمامی فصل‌ها به زبان فارسی استاندارد و با پوشش جزئیات فنی، دیاگرام‌های معماری (Mermaid) و کدهای تست‌شده در پوشه [`book/`](book/) نگارش شده‌اند:
+تمامی فصل‌ها به زبان فارسی استاندارد و با پوشش کامل کدهای عملیاتی در پوشه [`book/`](book/) نگارش شده‌اند:
 
-|  فصل   | عنوان                                                                                    | موضوعات کلیدی                                                                                       |
-| :----: | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| **۰۱** | [معماری Headless و مقایسه رویکردها](book/01-architecture-and-comparison.md)              | تفکیک فرانت و بک، مقایسه عمیق REST API در برابر WPGraphQL، نقشه معماری سیستم                        |
-| **۰۲** | [آماده‌سازی زیرساخت، سرور و دیتابیس](book/02-infrastructure-and-database.md)             | استراتژی ساب‌دامین، دیتابیس امن MySQL با utf8mb4، گواهی SSL، بهینه‌سازی PHP 8.2+ و OPcache          |
-| **۰۳** | [نصب و سخت‌سازی امنیتی پیشرفته وردپرس](book/03-wordpress-setup-hardening.md)             | مسدودسازی xmlrpc، تغییر مسیر ادمین، احراز هویت 2FA، تنظیمات wp-config و هدرهای امنیتی               |
-| **۰۴** | [راه‌اندازی API، مدیریت WPGraphQL و CORS](book/04-api-setup-cors.md)                     | نصب WPGraphQL، صفحه‌بندی Relay Cursor، جلوگیری از DoS، تنظیم دقیق هدرهای CORS                       |
-| **۰۵** | [مدل‌سازی داده و محتوای سفارشی](book/05-custom-content-fields.md)                        | ساخت Custom Post Type و تاکسونومی، فیلدهای سفارشی بدون افزونه پولی (`register_post_meta`)           |
-| **۰۶** | [ویرایشگر گوتنبرگ و رندرینگ ساختاریافته بلوک‌ها](book/06-gutenberg-structured-blocks.md) | خطرات HTML خام، افزونه Content Blocks، کامپوننت ماژولار `BlockRenderer`، پاک‌سازی با DOMPurify      |
-| **۰۷** | [راه‌اندازی پروژه مدرن Next.js و معماری App Router](book/07-nextjs-setup-app-router.md)  | ساختار پوشه‌بندی سازمانی، مرز Server/Client Components، اعتبارسنجی `.env`، فونت فارسی               |
-| **۰۸** | [ارتباط با وردپرس و استراتژی واکشی داده](book/08-data-fetching-graphql-client.md)        | کلاینت Native `fetch` تایپ‌شده در برابر Apollo، کشینگ در Next.js 15/16، استریمینگ با Suspense       |
-| **۰۹** | [مدیریت مسیرها، صفحات پویا و رندرینگ ایستا](book/09-routing-dynamic-pages-isr.md)        | مدیریت پارامترهای ناهمگام (`await params`)، پیش‌رندرینگ با `generateStaticParams`، هندلینگ ۴۰۴      |
-| **۱۰** | [به‌روزرسانی آنی حافظه پنهان (On-Demand ISR)](book/10-on-demand-revalidation.md)         | عبور از کش زمانی، وب‌هوک با امضای HMAC-SHA256 در وردپرس، ابطال تگ‌ها با `revalidateTag`             |
-| **۱۱** | [پیش‌نمایش زنده پیش‌نویس‌ها با Draft Mode](book/11-draft-mode-preview.md)                | اتصال دکمه پیش‌نمایش وردپرس، کوکی بای‌پاس `__prerender_bypass`، کامپوننت `PreviewBanner`            |
-| **۱۲** | [احراز هویت، مدیریت کاربران و Server Actions](book/12-auth-users-server-actions.md)      | امنیت کوکی‌های `HttpOnly`، اکشن‌های سروری ورود و عضویت با Zod، هوک `useActionState` و Middleware    |
-| **۱۳** | [سئو پیشرفته، متادیتای پویا و نقشه سایت](book/13-seo-metadata-sitemap.md)                | اتصال Yoast/Rank Math، ساخت داینامیک `sitemap.ts` و `robots.ts`، متادیتای OpenGraph، اسکیما JSON-LD |
-| **۱۴** | [کارایی، کش چندلایه و چک‌لیست پروداکشن](book/14-performance-caching-production.md)       | شاخص‌های Core Web Vitals، کش ۴ لایه، استقرار در Vercel یا Docker لینوکس، چک‌لیست طلایی انتشار       |
+| فصل | عنوان | موضوعات کلیدی |
+|:---:|---|---|
+| **۰۱** | [معماری Headless و مقایسه رویکردها](book/01-architecture-and-comparison.md) | تفکیک لایه‌ها، مزایا و چالش‌ها، اولویت مطلق GraphQL و کلاینت Apollo Client |
+| **۰۲** | [آماده‌سازی زیرساخت، سرور و دیتابیس](book/02-infrastructure-and-database.md) | تفکیک ساب‌دامین، MySQL با utf8mb4، گواهی SSL، کانفیگ اختصاصی PHP 8.5.12 |
+| **۰۳** | [نصب و سخت‌سازی امنیتی پیشرفته وردپرس](book/03-wordpress-setup-hardening.md) | سیاست طلایی حداقل پلاگین، مسدودسازی xmlrpc، تغییر مسیر ادمین، هدرهای امنیتی |
+| **۰۴** | [راه‌اندازی API، مدیریت WPGraphQL و CORS](book/04-api-setup-cors.md) | راه‌اندازی GraphQL 17.0.1، صفحه‌بندی Relay، قوانین ضد DoS، کانفیگ کامل CORS |
+| **۰۵** | [مدل‌سازی داده و محتوای سفارشی](book/05-custom-content-fields.md) | ساخت CPT و تاکسونومی به روش کدنویسی بومی PHP، فیلدهای سفارشی بدون پلاگین |
+| **۰۶** | [ویرایشگر گوتنبرگ و رندرینگ ساختاریافته بلوک‌ها](book/06-gutenberg-structured-blocks.md) | خروجی داده تایپ‌شده گوتنبرگ، کامپوننت ماژولار `BlockRenderer`، پاک‌سازی با DOMPurify |
+| **۰۷** | [راه‌اندازی پروژه مدرن Next.js و معماری App Router](book/07-nextjs-setup-app-router.md) | ساختار Next.js 16.4.5، پیکربندی وابستگی‌های Apollo Client 4.3.7، فونت‌های محلی |
+| **۰۸** | [ارتباط با وردپرس و واکشی داده با Apollo Client](book/08-data-fetching-graphql-client.md) | معماری کامل Apollo Client 4.3.7 در Server Components (`registerApolloClient`) و کلاینت |
+| **۰۹** | [مدیریت مسیرها، صفحات پویا و رندرینگ ایستا](book/09-routing-dynamic-pages-isr.md) | مدیریت پارامترهای ناهمگام (`await params`) در Next.js 16.4.5، پیش‌رندرینگ SSG و ۴۰۴ |
+| **۱۰** | [به‌روزرسانی آنی حافظه پنهان (On-Demand ISR)](book/10-on-demand-revalidation.md) | وب‌هوک با امضای HMAC-SHA256 در وردپرس، ابطال تگ‌ها با `revalidateTag` |
+| **۱۱** | [پیش‌نمایش زنده پیش‌نویس‌ها با Draft Mode](book/11-draft-mode-preview.md) | اتصال دکمه پیش‌نمایش وردپرس، کوکی `__prerender_bypass`، واکشی امن با Apollo |
+| **۱۲** | [احراز هویت، مدیریت کاربران و Server Actions](book/12-auth-users-server-actions.md) | لاگین و ثبت‌نام استاندارد و ایمن با Server Actions، اعتبارسنجی Zod و کوکی‌های `HttpOnly` |
+| **۱۳** | [سئو پیشرفته، متادیتای پویا و نقشه سایت](book/13-seo-metadata-sitemap.md) | استخراج سئو در GraphQL، تولید داینامیک `sitemap.ts` و `robots.ts`، اسکیما JSON-LD |
+| **۱۴** | [کارایی، کش چندلایه و چک‌لیست پروداکشن](book/14-performance-caching-production.md) | شاخص‌های Core Web Vitals، کش ۴ لایه، فایل‌های Dockerfile، چک‌لیست نهایی |
 
 ---
 
-## 🚀 ویژگی‌های کلیدی این راهنما
+## 🛡️ خط‌مشی‌های کلیدی این راهنما
 
-- **مبتنی بر استانداردهای ۲۰۲۶:** استفاده از آخرین نسخه‌های Next.js (App Router) و React 19.
-- **توسعه رایگان (Zero-Cost):** آموزش افزودن فیلدهای سفارشی و رندر محتوا بدون نیاز به افزونه‌های پولی مانند ACF Pro.
-- **امنیت در سطح استانداردهای بانکی:** ایزوله کردن سرور بک‌اند، مقابله با Timing Attacks، هدرهای امنیتی وب‌سرور و کوکی‌های `HttpOnly`.
-- **به‌روزرسانی رویدادمحور (On-Demand Revalidation):** حذف بازه‌های زمانی ثابت کش و انتشار محتوا در فرانت ظرف چند میلی‌ثانیه.
-- **کدهای کامل و تست‌شده:** بدون کدهای ناقص یا نمونه‌های غیرواقعی.
+1. **سیاست حداقل پلاگین (Minimal Plugins Policy):** بیش از ۹۵٪ رخنه‌های امنیتی در تاریخ وردپرس از افزونه‌های متفرقه ناشی می‌شوند. در این راهنما، به جز افزونه ضروری WPGraphQL، تمامی قابلیت‌ها (پست‌تایپ‌ها، فیلدها، وب‌هوک‌ها، احراز هویت) از طریق کدهای بومی، تمیز و شیءگرای PHP در قالب **Must-Use Plugins (mu-plugins)** پیاده‌سازی می‌شوند.
+2. **کلاینت استاندارد Apollo Client 4.3.7:** پیاده‌سازی رسمی و بدون باگ برای معماری App Router در محیط‌های React Server Components و Client Components.
+3. **احراز هویت استاندارد و امن:** ثبت‌نام و ورود کاربران بدون توکن‌های ناامن در مرورگر، با تکیه بر Server Actions و کوکی‌های امن سروری `HttpOnly`.
+4. **نسخه‌های پایدار و به‌روز:** تطابق کامل با Next.js 16.4.5، وردپرس 7.1.4، PHP 8.5.12، گراف‌کیوال 17.0.1 و آپولو ۴.۳.۷.
 
 ---
 
 ## 📄 لایسنس و حق نشر
 
-این پروژه تحت مجوز [MIT License](LICENSE) منتشر شده است و استفاده شخصی و تجاری از آن آزاد است.
+این پروژه تحت مجوز [MIT License](LICENSE) منتشر شده است.
 
 - **توسعه‌دهنده و نگارنده:** [herehossein](https://github.com/herehossein)
 - **آدرس ریپازیتوری:** [https://github.com/herehossein/headlessWP-nextJS](https://github.com/herehossein/headlessWP-nextJS)
