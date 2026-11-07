@@ -1,201 +1,147 @@
-# فصل ۸: ارتباط با وردپرس، استراتژی واکشی داده و کلاینت GraphQL (Data Fetching & GraphQL Client)
+# فصل ۸: ارتباط با وردپرس و واکشی داده با Apollo Client (GraphQL Data Fetching with Apollo Client 4.3.7)
 
-یکی از مهم‌ترین تصمیمات معماری در پروژه‌های Headless با Next.js، نحوه ارسال کوئری‌های GraphQL به وردپرس است. سال‌هاست که در اکوسیستم ری‌اکت، ابزارهایی مانند Apollo Client یا Relay به عنوان گزینه‌های استاندارد شناخته می‌شوند. اما با معرفی **React Server Components** و بازطراحی موتور کشینگ در **Next.js 15 و 16**، این پرسش بنیادین مطرح می‌شود: **آیا واقعاً به یک کتابخانه سنگین مانند Apollo Client نیاز داریم، یا تابع بومی `fetch` خود پلتفرم عملکرد برتری ارائه می‌دهد؟**
+در معماری‌های مدرن وب، واکشی داده از یک سرور GraphQL به کلاینتی نیاز دارد که بتواند کشینگ هوشمند، مدیریت خطاهای پیشرفته، و سازگاری کامل با **React Server Components (RSC)** و استریمینگ را فراهم کند. کتابخانه **Apollo Client 4.3.7** استاندارد طلایی و پیشرو در اکوسیستم GraphQL برای تحقق این هدف است.
 
-در این فصل، استراتژی‌های انتخاب کلاینت را به صورت کارشناسی مقایسه می‌کنیم، یک کلاینت تایپ‌شده و قدرتمند با Native Fetch می‌سازیم، رفتار جدید کشینگ در نسخه‌های اخیر Next.js را کالبدشکافی کرده و مدیریت خطاها و استریمینگ را با کامپوننت `<Suspense>` پیاده‌سازی می‌نماییم.
+با انتشار بسته رسمی **`@apollo/client-integration-nextjs`**، هماهنگی عمیقی میان Apollo Client و موتور کشینگ **Next.js 16.4.5** ایجاد شده است؛ به طوری که در سرور، از کشینگ بومی Next.js و تگ‌های Revalidation استفاده می‌شود و در کلاینت، کش قدرتمند `InMemoryCache` و هوک‌های استریمینگ بدون هیچ تداخلی در دسترس هستند.
+
+در این فصل، معماری کامل Apollo Client 4.3.7 را در Next.js 16.4.5 پیاده‌سازی می‌کنیم.
 
 ---
 
-## ۱. مقایسه استراتژی‌های واکشی داده: Native Fetch در برابر Apollo Client
+## ۱. معماری دولایه Apollo Client در Next.js 16.4.5 App Router
 
 ```mermaid
 flowchart TD
-    subgraph ApolloClientApproach["رویکرد Apollo Client"]
-        A1["نصب پکیج‌های @apollo/client و اینتگریشن‌ها"]
-        A2["اضافه شدن بیش از ۴۰ کیلوبایت به حجم باندل"]
-        A3["کش جداگانه در رم کلاینت (InMemoryCache)"]
-        A4["هماهنگی پیچیده‌تر با Next.js Data Cache و تگ‌های کش"]
+    subgraph RSC["۱. سرور کامپوننت‌ها (React Server Components)"]
+        RSC_Comp["BlogPage (Server Component)"] -->|"query() مستقیم"| RegClient["registerApolloClient()"]
+        RegClient --> HttpLink1["HttpLink (با آدرس سرور WP)"]
+        HttpLink1 --> NextCache["Next.js Data Cache (next.tags / ISR)"]
     end
 
-    subgraph NativeFetchApproach["رویکرد پیشنهادی: Native fetch با تگ‌های کش"]
-        F1["استفاده از fetch استاندارد وب (Zero Dependencies)"]
-        F2["صفر بایت اضافه به حجم خروجی باندل (Zero JS Overhead)"]
-        F3["یکپارچگی مستقیم و بومی با Next.js Data Cache"]
-        F4["پشتیبانی ساده از تگ‌های کش (next: { tags: [...] })"]
+    subgraph ClientLayer["۲. کلاینت کامپوننت‌ها (Client Components)"]
+        Client_Comp["فرم‌ها و عناصر تعاملی ('use client')"] -->|"useSuspenseQuery / useMutation"| Provider["ApolloNextAppProvider"]
+        Provider --> MemCache["InMemoryCache (در حافظه رم کلاینت)"]
     end
 
-    style ApolloClientApproach fill:#fffde7,stroke:#fbc02d,stroke-width:2px
-    style NativeFetchApproach fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    NextCache <-->|"GraphQL 17.0.1 Payload"| WP["سرور وردپرس 7.1.4 (WPGraphQL)"]
+
+    style RSC fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    style ClientLayer fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    style WP fill:#fff3e0,stroke:#e65100,stroke-width:2px
 ```
 
-### ۱.۱. جدول مقایسه فنی و معماری
-
-| شاخص مقایسه                                        | کلاینت بومی Native `fetch` (پیشنهاد ما) | Apollo Client                                          |
-| -------------------------------------------------- | --------------------------------------- | ------------------------------------------------------ |
-| **سربار باندل (Bundle Size)**                      | **صفر بایت** (بخشی از استاندارد وب)     | حدود ۴۰ الی ۵۰ کیلوبایت جاوااسکریپت                    |
-| **یکپارچگی با Next.js Data Cache**                 | بومی و بی‌واسطه در هسته Next.js         | نیازمند پکیج کمکی و تطبیق کش                           |
-| **پشتیبانی از تگ‌های باطل‌سازی (`revalidateTag`)** | فوق‌العاده ساده از طریق شیء `next.tags` | نیازمند تنظیمات دستی یا دور زدن کش آپولو               |
-| **پیچیدگی پیاده‌سازی**                             | بسیار ساده و تمیز (کمتر از ۵۰ خط کد)    | نیازمند Provider، تنظیم پیوندها و پیکربندی کلاینت/سرور |
-| **بهترین کاربرد**                                  | **۹۵٪ سایت‌های محتوایی و وبلاگ‌ها**     | اپلیکیشن‌های بسیار تعاملی با تغییرات محلی وضعیت کلاینت |
-
-> [!TIP]
-> **قانون Ponytail (ساده‌ترین راهکار کامل):** از آنجا که صفحات ما با Server Components رندر می‌شوند، یک ماژول کوچک `fetchGraphQL` تمام نیازهای ما را با حداکثر سرعت و بدون یک بایت وابستگی خارجی برطرف می‌سازد.
+### تفکیک وظایف دو محیط:
+1. **سمت سرور (RSC):** از تابع `registerApolloClient` استفاده می‌کنیم که تضمین می‌کند در طول پردازش هر درخواست ورودی (Per-request)، یک نمونه پایدار و ایزوله از کلاینت به اشتراک گذاشته شود تا داده‌های کاربران مختلف با هم تداخل پیدا نکنند (Preventing Cross-request State Leaks).
+2. **سمت کلاینت:** از کامپوننت `ApolloNextAppProvider` به عنوان یک Wrapper در `app/layout.tsx` استفاده می‌کنیم تا کامپوننت‌های تعاملی بتوانند از قابلیت‌های `InMemoryCache` و هوک‌های React 19 استفاده کنند.
 
 ---
 
-## ۲. پیاده‌سازی کلاینت تایپ‌شده Native Fetch (`lib/graphql.ts`)
+## ۲. پیاده‌سازی کلاینت سروری (`lib/apollo-client.ts`)
 
-ماژول زیر را در مسیر `lib/graphql.ts` بسازید. این تابع جنریک (`<T>`) وظیفه ارسال کوئری به WPGraphQL، مدیریت هدرهای امنیتی، خطایابی و کشینگ را به عهده دارد:
+فایل زیر کلاینت آپولو را برای استفاده در تمام سرور کامپوننت‌ها ثبت می‌کند:
 
 ```typescript
-// lib/graphql.ts
+// lib/apollo-client.ts
+import { HttpLink } from "@apollo/client";
+import {
+  registerApolloClient,
+  ApolloClient,
+  InMemoryCache,
+} from "@apollo/client-integration-nextjs";
 import { env } from "./env";
 
-interface GraphQLResponse<T> {
-  data?: T;
-  errors?: Array<{
-    message: string;
-    locations?: Array<{ line: number; column: number }>;
-    path?: string[];
-  }>;
-}
-
-interface FetchGraphQLOptions {
-  variables?: Record<string, any>;
-  tags?: string[];
-  revalidate?: number | false;
-  requireAuth?: boolean;
-}
-
-export async function fetchGraphQL<T>(
-  query: string,
-  options: FetchGraphQLOptions = {},
-): Promise<T> {
-  const {
-    variables,
-    tags = [],
-    revalidate = false,
-    requireAuth = false,
-  } = options;
-
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-  };
-
-  // در صورت نیاز به خواندن پیش‌نویس‌ها یا داده‌های خصوصی ادمین
-  if (requireAuth && env.WP_APP_USER && env.WP_APP_PASSWORD) {
-    const credentials = Buffer.from(
-      `${env.WP_APP_USER}:${env.WP_APP_PASSWORD}`,
-    ).toString("base64");
-    headers["Authorization"] = `Basic ${credentials}`;
-  }
-
-  // تنظیم استراتژی کش در Next.js 15 و 16
-  const fetchOptions: RequestInit = {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ query, variables }),
-  };
-
-  if (tags.length > 0 || revalidate !== false) {
-    fetchOptions.next = {
-      tags,
-      revalidate,
-    };
-  } else {
-    // کش دائمی تا زمان دریافت سیگنال Revalidation از وب‌هوک
-    fetchOptions.cache = "force-cache";
-  }
-
-  try {
-    const response = await fetch(env.WP_GRAPHQL_URL, fetchOptions);
-
-    if (!response.ok) {
-      throw new Error(
-        `خطای HTTP در ارتباط با وردپرس: وضعیت ${response.status} (${response.statusText})`,
-      );
-    }
-
-    const json: GraphQLResponse<T> = await response.json();
-
-    if (json.errors && json.errors.length > 0) {
-      const errorMsg = json.errors.map((e) => e.message).join(" | ");
-      throw new Error(`خطای پردازش در GraphQL: ${errorMsg}`);
-    }
-
-    if (!json.data) {
-      throw new Error("پاسخ دریافتی از GraphQL فاقد هرگونه داده است.");
-    }
-
-    return json.data;
-  } catch (error: any) {
-    console.error("❌ شکست در اجرای کوئری GraphQL:", error.message);
-    throw error;
-  }
-}
+export const { getClient, query, PreloadQuery } = registerApolloClient(() => {
+  return new ApolloClient({
+    cache: new InMemoryCache(),
+    link: new HttpLink({
+      // آدرس اندپوینت باید حتماً URL مطلق (Absolute) باشد
+      uri: env.WP_GRAPHQL_URL,
+      headers: {
+        "Content-Type": "application/json",
+      },
+      // تنظیمات پیش‌فرض کش در Next.js 16.4.5
+      fetchOptions: {
+        cache: "force-cache",
+      },
+    }),
+  });
+});
 ```
 
 ---
 
-## ۳. درک تحول کشینگ در Next.js 15 و 16
+## ۳. پیاده‌سازی پرووایدر کلاینتی (`components/ApolloWrapper.tsx`)
 
-در نسخه‌های قبلی Next.js (مانند نسخه ۱۳ و ۱۴)، تابع `fetch` به صورت پیش‌فرض تمام درخواست‌ها را به صورت نامحدود کش می‌کرد (`force-cache`).
-
-اما در **Next.js 15 و 16**، این رفتار تغییر کرده است:
-
-- درخواست‌های `fetch` به صورت پیش‌فرض روی حالت **`no-store`** قرار دارند (داده‌های همیشه تازه، بدون کش).
-- بنابراین، اگر می‌خواهید سرعت بالا و مزایای **ISR (تولید افزایشی ایستا)** را داشته باشید، باید صراحتاً در کد خود از تگ‌های کش (`next: { tags }`) یا عبارت `cache: 'force-cache'` استفاده کنید؛ دقیقاً همان کاری که در تابع `fetchGraphQL` بالا انجام دادیم.
-
-```mermaid
-flowchart LR
-    Fetch["درخواست fetchGraphQL(query, { tags: ['posts'] })"] --> CheckCache{"آیا در Data Cache حاضر است؟"}
-    CheckCache -- بله --> HIT["پاسخ فوری از حافظه (Cache HIT)"]
-    CheckCache -- خیر --> MISS["ارسال به سرور وردپرس (Cache MISS)"]
-    MISS --> Save["ذخیره در Data Cache با برچسب 'posts'"]
-    Save --> Return["تحویل به Server Component"]
-```
-
----
-
-## ۴. استریمینگ داده و کامپوننت `<Suspense>`
-
-به جای این‌که کل صفحه تا زمان پاسخ‌دهی سرور وردپرس سفید بماند، با استفاده از **React Suspense** می‌توانیم ساختار کلی صفحه (هدر و اسکلت لودینگ) را در میلی‌ثانیه اول به کاربر نشان داده و بخش داده‌ها را به محض آماده‌شدن استریم کنیم.
-
-### ۴.۱. ایجاد اسکلتون لودینگ (`components/PostListSkeleton.tsx`)
+این کامپوننت وظیفه دارد اپلیکیشن را در سمت کلاینت با پرووایدر استریمینگ Apollo پوشش دهد:
 
 ```tsx
-export function PostListSkeleton() {
+// components/ApolloWrapper.tsx
+"use client";
+
+import { HttpLink } from "@apollo/client";
+import {
+  ApolloNextAppProvider,
+  ApolloClient,
+  InMemoryCache,
+} from "@apollo/client-integration-nextjs";
+
+function makeClient() {
+  const httpLink = new HttpLink({
+    uri: process.env.NEXT_PUBLIC_SITE_URL
+      ? `${process.env.NEXT_PUBLIC_SITE_URL}/api/graphql-proxy`
+      : "https://cms.yourdomain.com/graphql",
+  });
+
+  return new ApolloClient({
+    cache: new InMemoryCache(),
+    link: httpLink,
+  });
+}
+
+export function ApolloWrapper({ children }: React.PropsWithChildren) {
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 animate-pulse">
-      {[...Array(6)].map((_, i) => (
-        <div
-          key={i}
-          className="bg-white dark:bg-gray-800 rounded-2xl p-5 border border-gray-100 dark:border-gray-750 shadow-sm"
-        >
-          <div className="w-full h-48 bg-gray-200 dark:bg-gray-700 rounded-xl mb-4" />
-          <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-3/4 mb-2" />
-          <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-4" />
-          <div className="h-16 bg-gray-200 dark:bg-gray-700 rounded w-full" />
-        </div>
-      ))}
-    </div>
+    <ApolloNextAppProvider makeClient={makeClient}>
+      {children}
+    </ApolloNextAppProvider>
+  );
+}
+```
+
+سپس در فایل `app/layout.tsx`، کل محتوای `<body>` را درون `<ApolloWrapper>` قرار دهید:
+
+```tsx
+// بخشی از app/layout.tsx
+import { ApolloWrapper } from "@/components/ApolloWrapper";
+
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="fa" dir="rtl">
+      <body>
+        <ApolloWrapper>
+          {children}
+        </ApolloWrapper>
+      </body>
+    </html>
   );
 }
 ```
 
 ---
 
-### ۴.۲. استفاده در Server Component با Suspense (`app/blog/page.tsx`)
+## ۴. اجرای کوئری تایپ‌شده در Server Component با تگ‌های کش (`app/blog/page.tsx`)
+
+اکنون در صفحه وبلاگ، با متد `query` از `lib/apollo-client` کوئری را مستقیماً فراخوانی کرده و از برچسب‌های کش Next.js (`tags`) استفاده می‌کنیم:
 
 ```tsx
-import { Suspense } from "react";
+// app/blog/page.tsx
+import { gql } from "@apollo/client";
+import { query } from "@/lib/apollo-client";
 import Link from "next/link";
 import Image from "next/image";
-import { fetchGraphQL } from "@/lib/graphql";
+import { Suspense } from "react";
 import { PostListSkeleton } from "@/components/PostListSkeleton";
 
-interface PostArchiveQuery {
+interface PostArchiveData {
   posts: {
     nodes: Array<{
       id: string;
@@ -213,7 +159,7 @@ interface PostArchiveQuery {
   };
 }
 
-const GET_POSTS_QUERY = `
+const GET_POSTS_QUERY = gql`
   query GetRecentPosts {
     posts(first: 9) {
       nodes {
@@ -233,10 +179,17 @@ const GET_POSTS_QUERY = `
   }
 `;
 
-// کامپوننت ناهمگام سروری که داده را واکشی می‌کند
 async function PostGrid() {
-  const data = await fetchGraphQL<PostArchiveQuery>(GET_POSTS_QUERY, {
-    tags: ["posts", "blog-archive"],
+  // اجرای کوئری با Apollo Client 4.3.7 به همراه برچسب‌های کش Next.js 16.4.5
+  const { data } = await query<PostArchiveData>({
+    query: GET_POSTS_QUERY,
+    context: {
+      fetchOptions: {
+        next: {
+          tags: ["posts", "blog-archive"],
+        },
+      },
+    },
   });
 
   return (
@@ -288,7 +241,6 @@ export default function BlogArchivePage() {
         </p>
       </div>
 
-      {/* استریمینگ با کامپوننت Suspense */}
       <Suspense fallback={<PostListSkeleton />}>
         <PostGrid />
       </Suspense>
@@ -299,9 +251,7 @@ export default function BlogArchivePage() {
 
 ---
 
-## ۵. مدیریت پیشرفته خطاها با `error.tsx`
-
-اگر سرور وردپرس در دسترس نباشد یا شبکه قطع شود، صفحه نباید کرش کند. فایل `app/blog/error.tsx` یک Error Boundary سمت کلاینت ایجاد می‌کند:
+## ۵. مدیریت خطاهای شبکه و ران‌تایم با `app/blog/error.tsx`
 
 ```tsx
 // app/blog/error.tsx
@@ -317,7 +267,7 @@ export default function BlogError({
   reset: () => void;
 }) {
   useEffect(() => {
-    console.error("خطای بارگذاری در صفحه وبلاگ:", error);
+    console.error("خطای بارگذاری در Apollo Client:", error);
   }, [error]);
 
   return (
@@ -325,12 +275,9 @@ export default function BlogError({
       <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 mb-4 text-2xl font-bold">
         !
       </div>
-      <h2 className="text-2xl font-bold mb-2">
-        خطا در برقراری ارتباط با پایگاه محتوا
-      </h2>
+      <h2 className="text-2xl font-bold mb-2">خطا در دریافت داده‌ها با Apollo Client</h2>
       <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto mb-6 text-sm">
-        متاسفانه در حال حاضر امکان دریافت آخرین مقالات از سرور وردپرس میسر نشد.
-        لطفاً چند لحظه بعد مجدداً تلاش کنید.
+        متاسفانه امکان برقراری ارتباط با سرور GraphQL وردپرس میسر نشد.
       </p>
       <button
         onClick={() => reset()}
@@ -348,10 +295,9 @@ export default function BlogError({
 ## ۶. خلاصه فصل
 
 در این فصل:
+- **Apollo Client 4.3.7** را به عنوان کلاینت محوری پروژه در Next.js 16.4.5 مستقر کردیم.
+- با تابع `registerApolloClient`، کلاینت اختصاصی Server Components را با اتصال به Data Cache پیکربندی نمودیم.
+- با کامپوننت `ApolloWrapper`، زمینه را برای استفاده از هوک‌های استریمینگ کلاینت مهیا ساختیم.
+- نحوه ارسال تگ‌های کش Next.js درون تنظیمات `fetchOptions` آپولو را پیاده کردیم.
 
-- بهینه‌ترین استراتژی واکشی داده در Next.js مدرن (Native Fetch) را انتخاب کردیم و هزینه‌های اضافه کتابخانه‌های خارجی را حذف نمودیم.
-- یک ماژول کامل `fetchGraphQL` با پشتیبانی از TypeScript، احراز هویت و تگ‌های کش ساختیم.
-- تحول کشینگ پیش‌فرض در Next.js 15/16 را بررسی کرده و تگ‌گذاری هوشمند داده‌ها را فعال کردیم.
-- با استفاده از React `<Suspense>` و کامپوننت‌های اسکلتون، تجربه کاربری را با استریمینگ روان ارتقا دادیم.
-
-در **فصل نهم**، به سراغ ساخت صفحات پویا، آرشیو دسته‌بندی‌ها و تولید استاتیک فوق سریع با **`generateStaticParams`** خواهیم رفت.
+در **فصل نهم**، مدیریت مسیرهای پویا (`/blog/[slug]`) و پیش‌رندرینگ SSG را با کوئری‌های تایپ‌شده Apollo Client پیاده‌سازی خواهیم کرد.

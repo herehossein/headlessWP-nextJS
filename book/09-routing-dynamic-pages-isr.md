@@ -2,27 +2,17 @@
 
 در هر وب‌سایت محتوایی، صفحات پویا (Dynamic Routes) هسته اصلی تجربه کاربری هستند: صفحه اختصاصی هر مقاله بر اساس نام مستعار (`/blog/[slug]`)، برگه‌های ایستا (`/[slug]`)، و صفحات آرشیو دسته‌بندی‌ها (`/category/[slug]`).
 
-در Next.js مدرن (نسخه‌های ۱۵ و ۱۶)، تغییرات مهم و بنیادینی در نحوه دسترسی به پارامترهای مسیر رخ داده است. همچنین با ترکیب تابع قدرتمند **`generateStaticParams`** با **تولید افزایشی ایستا (ISR)**، می‌توانیم هزاران صفحه را در زمان بیلد تولید کرده و صفحات جدید را بدون نیاز به ساخت مجدد کل سایت رندر کنیم.
+در **Next.js 16.4.5**، دسترسی به پارامترهای مسیر به صورت ناهمگام (Async Promise) انجام می‌پذیرد. همچنین با ترکیب تابع قدرتمند **`generateStaticParams`** با **Apollo Client 4.3.7**، می‌توانیم صدها صفحه را در زمان بیلد تولید کرده و صفحات جدید را با سرعت تولید افزایشی ایستا (ISR) رندر کنیم.
 
-در این فصل، معماری مسیرهای پویا، مدیریت تغییرات آسنکرون در Next.js 15/16، تولید صفحات ایستا، پیاده‌سازی صفحه ۴۰۴ هوشمند و صفحه‌بندی مقالات را قدم‌به‌قدم پیاده‌سازی می‌کنیم.
+در این فصل، ساختار صفحات پویا، پیش‌رندرینگ SSG با Apollo Client و پیاده‌سازی صفحه ۴۰۴ را قدم‌به‌قدم پیاده می‌کنیم.
 
 ---
 
-## ۱. تحول پارامترهای ناهمگام (Async Params) در Next.js 15 و 16
+## ۱. مدیریت پارامترهای ناهمگام (Async Params) در Next.js 16.4.5
 
-یکی از مهم‌ترین تفاوت‌های نسخه‌های جدید Next.js با گذشته این است که خصوصیات **`params`** و **`searchParams`** در کامپوننت‌های صفحه و توابع متادیتا اکنون به صورت **`Promise`** هستند و باید با کلمه کلیدی `await` حل شوند:
-
-```mermaid
-flowchart LR
-    Old["نسخه‌های قبلی (Next.js 13/14)"] -->|"params به صورت همگام (Sync)"| OldCode["function Page({ params }: { params: { slug: string } })"]
-    New["نسخه‌های مدرن (Next.js 15/16)"] -->|"params به صورت ناهمگام (Async Promise)"| NewCode["async function Page({ params }: { params: Promise<{ slug: string }> })"]
-
-    style Old fill:#ffebee,stroke:#c62828,stroke-width:2px
-    style New fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
-```
+در نسخه 16.4.5، خصوصیات `params` و `searchParams` در کامپوننت‌های صفحه و توابع متادیتا یک **Promise** هستند و باید با `await` حل شوند:
 
 ```typescript
-// شیوه صحیح در Next.js 15 و 16
 interface PageProps {
   params: Promise<{
     slug: string;
@@ -30,27 +20,28 @@ interface PageProps {
 }
 
 export default async function BlogPostPage({ params }: PageProps) {
-  // حل کردن Promise پارامترها به صورت ناهمگام
+  // در Next.js 16.4.5 حتماً باید await شود:
   const { slug } = await params;
-
-  // ادامه واکشی داده با slug...
+  
+  // ادامه کار...
 }
 ```
 
 ---
 
-## ۲. پیاده‌سازی صفحه تک‌پست با رندرینگ ساختاریافته بلوک‌ها (`app/blog/[slug]/page.tsx`)
+## ۲. پیاده‌سازی صفحه تک‌پست با Apollo Client (`app/blog/[slug]/page.tsx`)
 
-این صفحه وظیفه دارد با دریافت Slug، اطلاعات کامل مقاله و بلوک‌های گوتنبرگ را از WPGraphQL واکشی کرده و به کامپوننت `BlockRenderer` تحویل دهد:
+این صفحه با دریافت Slug، اطلاعات مقاله و بلوک‌های محتوا را از طریق **Apollo Client 4.3.7** از سرور وردپرس 7.1.4 واکشی کرده و به کامپوننت `BlockRenderer` تحویل می‌دهد:
 
 ```tsx
 // app/blog/[slug]/page.tsx
 import { notFound } from "next/navigation";
 import Image from "next/image";
-import { fetchGraphQL } from "@/lib/graphql";
+import { gql } from "@apollo/client";
+import { query } from "@/lib/apollo-client";
 import { BlockRenderer } from "@/components/blocks/BlockRenderer";
 
-interface BlogPostQuery {
+interface BlogPostData {
   post: {
     id: string;
     databaseId: number;
@@ -75,7 +66,7 @@ interface BlogPostQuery {
   } | null;
 }
 
-const GET_POST_BY_SLUG = `
+const GET_POST_BY_SLUG = gql`
   query GetPostBySlug($slug: ID!) {
     post(id: $slug, idType: SLUG) {
       id
@@ -153,17 +144,21 @@ interface PageProps {
 
 export default async function BlogPostPage({ params }: PageProps) {
   const { slug } = await params;
-
-  // رمزگشایی اسلاگ‌های حاوی حروف فارسی
   const decodedSlug = decodeURIComponent(slug);
 
-  const data = await fetchGraphQL<BlogPostQuery>(GET_POST_BY_SLUG, {
+  const { data } = await query<BlogPostData>({
+    query: GET_POST_BY_SLUG,
     variables: { slug: decodedSlug },
-    tags: [`post-${decodedSlug}`, "posts"],
+    context: {
+      fetchOptions: {
+        next: {
+          tags: [`post-${decodedSlug}`, "posts"],
+        },
+      },
+    },
   });
 
-  // اگر پستی با این شناسه در وردپرس یافت نشد
-  if (!data.post) {
+  if (!data?.post) {
     notFound();
   }
 
@@ -171,7 +166,6 @@ export default async function BlogPostPage({ params }: PageProps) {
 
   return (
     <article className="max-w-4xl mx-auto py-8">
-      {/* تیتر و متادیتای نویسنده */}
       <header className="mb-8 border-b border-gray-200 dark:border-gray-800 pb-8">
         <h1 className="text-3xl sm:text-4xl lg:text-5xl font-black text-gray-900 dark:text-white leading-tight mb-6">
           {post.title}
@@ -202,7 +196,6 @@ export default async function BlogPostPage({ params }: PageProps) {
         </div>
       </header>
 
-      {/* تصویر شاخص پست */}
       {post.featuredImage?.node && (
         <div className="relative aspect-video w-full rounded-2xl overflow-hidden mb-10 shadow-md">
           <Image
@@ -216,7 +209,6 @@ export default async function BlogPostPage({ params }: PageProps) {
         </div>
       )}
 
-      {/* رندر ماژولار بلوک‌های گوتنبرگ */}
       <section className="mt-8">
         <BlockRenderer blocks={post.editorBlocks} />
       </section>
@@ -227,14 +219,12 @@ export default async function BlogPostPage({ params }: PageProps) {
 
 ---
 
-## ۳. پیش‌رندرینگ در زمان بیلد با `generateStaticParams`
-
-اگر وب‌سایت شما صدها مقاله دارد، نمی‌خواهیم کاربر اول با تاخیر مواجه شود. با تابع **`generateStaticParams`** می‌توانیم لیست اسلاگ‌های مقالات پربازدید را در زمان بیلد بگیریم تا صفحات HTML آن‌ها بلافاصله و با سرعت نور تولید شوند:
+## ۳. پیش‌رندرینگ در زمان بیلد با `generateStaticParams` و Apollo Client
 
 ```tsx
-// افزودن این تابع به انتهای فایل app/blog/[slug]/page.tsx:
+// افزودن به انتهای فایل app/blog/[slug]/page.tsx:
 
-interface AllSlugsQuery {
+interface AllSlugsData {
   posts: {
     nodes: Array<{
       slug: string;
@@ -242,7 +232,7 @@ interface AllSlugsQuery {
   };
 }
 
-const GET_ALL_SLUGS = `
+const GET_ALL_SLUGS = gql`
   query GetAllPostSlugs {
     posts(first: 100) {
       nodes {
@@ -254,7 +244,10 @@ const GET_ALL_SLUGS = `
 
 export async function generateStaticParams() {
   try {
-    const data = await fetchGraphQL<AllSlugsQuery>(GET_ALL_SLUGS);
+    const { data } = await query<AllSlugsData>({
+      query: GET_ALL_SLUGS,
+    });
+
     return data.posts.nodes.map((post) => ({
       slug: post.slug,
     }));
@@ -264,32 +257,12 @@ export async function generateStaticParams() {
   }
 }
 
-// رفتار Next.js برای مقالاتی که در زمان بیلد تولید نشده‌اند:
-// مقدار true یعنی مقاله جدید در اولین درخواست در پس‌زمینه تولید و کش می‌شود (ISR)
 export const dynamicParams = true;
 ```
 
 ---
 
-## ۴. چرخه تصمیم‌گیری رندرینگ در Next.js
-
-```mermaid
-flowchart TD
-    Request["کاربر آدرس /blog/new-post را باز می‌کند"] --> CheckBuild{"آیا صفحه در زمان Build ساخته شده است؟"}
-    CheckBuild -- بله --> ServeStatic["تحویل فوری نسخه HTML از Edge CDN (میلی‌ثانیه‌ای)"]
-    CheckBuild -- خیر --> CheckDynamic{"آیا dynamicParams = true است؟"}
-    CheckDynamic -- خیر --> Return404["نمایش صفحه ۴۰۴ سفارشی"]
-    CheckDynamic -- بله --> FetchServer["درخواست داده از وردپرس در سمت سرور"]
-    FetchServer --> CheckExist{"آیا پست در وردپرس وجود دارد؟"}
-    CheckExist -- خیر --> CallNotFound["فراخوانی notFound() و نمایش 404"]
-    CheckExist -- بله --> RenderHTML["رندر صفحه و ذخیره در Data Cache برای کاربران بعدی"]
-```
-
----
-
-## ۵. طراحی صفحه خطای ۴۰۴ سفارشی (`app/not-found.tsx`)
-
-هنگامی که تابع `notFound()` فراخوانی می‌شود، Next.js به طور خودکار کامپوننت زیر را رندر می‌کند:
+## ۴. طراحی صفحه خطای ۴۰۴ سفارشی (`app/not-found.tsx`)
 
 ```tsx
 // app/not-found.tsx
@@ -303,14 +276,13 @@ export default function NotFound() {
       </span>
       <h1 className="text-3xl font-extrabold mb-3">صفحه مورد نظر یافت نشد</h1>
       <p className="text-gray-600 dark:text-gray-400 mb-8 text-sm leading-relaxed">
-        مطلبی که به دنبال آن بودید ممکن است حذف شده، تغییر نام یافته یا آدرس آن
-        اشتباه وارد شده باشد.
+        مطلبی که به دنبال آن بودید ممکن است حذف شده یا آدرس آن تغییر یافته باشد.
       </p>
       <Link
         href="/blog"
         className="inline-flex items-center justify-center px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-sm transition-colors shadow-sm"
       >
-        بازگشت به آرشیو وبلاگ
+        بازگشت به وبلاگ
       </Link>
     </div>
   );
@@ -319,83 +291,11 @@ export default function NotFound() {
 
 ---
 
-## ۶. پیاده‌سازی برگه‌های ایستا (`app/[slug]/page.tsx`)
-
-برای برگه‌هایی مانند «درباره ما»، «قوانین سایت» و «همکاری با ما»، از روت پویا در سطح ریشه استفاده می‌کنیم:
-
-```tsx
-// app/[slug]/page.tsx
-import { notFound } from "next/navigation";
-import { fetchGraphQL } from "@/lib/graphql";
-import { BlockRenderer } from "@/components/blocks/BlockRenderer";
-
-interface PageQuery {
-  page: {
-    id: string;
-    title: string;
-    slug: string;
-    editorBlocks: any[];
-  } | null;
-}
-
-const GET_PAGE_BY_SLUG = `
-  query GetPageBySlug($slug: ID!) {
-    page(id: $slug, idType: URI) {
-      id
-      title
-      slug
-      editorBlocks(flat: false) {
-        __typename
-        ... on CoreParagraph {
-          attributes { content }
-        }
-        ... on CoreHeading {
-          attributes { content level }
-        }
-      }
-    }
-  }
-`;
-
-export default async function StaticPage({
-  params,
-}: {
-  params: Promise<{ slug: string }>;
-}) {
-  const { slug } = await params;
-  const decodedSlug = decodeURIComponent(slug);
-
-  const data = await fetchGraphQL<PageQuery>(GET_PAGE_BY_SLUG, {
-    variables: { slug: decodedSlug },
-    tags: [`page-${decodedSlug}`, "pages"],
-  });
-
-  if (!data.page) {
-    notFound();
-  }
-
-  return (
-    <article className="max-w-3xl mx-auto py-10">
-      <h1 className="text-3xl sm:text-4xl font-extrabold mb-8 border-b pb-4 border-gray-200 dark:border-gray-800">
-        {data.page.title}
-      </h1>
-      <BlockRenderer blocks={data.page.editorBlocks} />
-    </article>
-  );
-}
-```
-
----
-
-## ۷. خلاصه فصل
+## ۵. خلاصه فصل
 
 در این فصل:
+- کار با پارامترهای ناهمگام را در **Next.js 16.4.5** تثبیت کردیم.
+- صفحه تک‌پست را با **Apollo Client 4.3.7** و تگ‌های کش برپا کردیم.
+- با تابع `generateStaticParams` تولید ایستا (SSG) را برای مقالات پربازدید در زمان بیلد فعال ساختیم.
 
-- ساختار روت‌های پویا و دسترسی به پارامترهای ناهمگام (`params` به صورت Promise) در Next.js 15 و 16 را پیاده‌سازی کردیم.
-- صفحه تک‌پست وبلاگ را با پشتیبانی از اسلاگ‌های فارسی و رندر ساختاریافته بلوک‌ها ساختیم.
-- با استفاده از `generateStaticParams`، تولید ایستا (SSG) را برای مقالات کلیدی در زمان بیلد فعال نمودیم.
-- ساختار هندلینگ ۴۰۴ و روت برگه‌های مستقل را تکمیل کردیم.
-
-اکنون صفحات ما با نهایت سرعت کش شده‌اند؛ اما اگر ادمین مقاله‌ای را در پیشخوان وردپرس ویرایش کند چه می‌شود؟ در **فصل دهم**، سیستم شگفت‌انگیز **On-Demand Revalidation** را که قبلاً بررسی کردیم، به عنوان قلب تپنده همگام‌سازی لحظه‌ای محتوا در اختیار داریم.
-
-در ادامه، مستقیماً به سراغ **فصل یازدهم: پیش‌نمایش زنده پیش‌نویس‌ها با Draft Mode** خواهیم رفت.
+در ادامه، نحوه مدیریت پیش‌نمایش زنده در حالت **Draft Mode** را در فصل یازدهم و سپس سیستم جامع احراز هویت را در فصل دوازدهم بررسی خواهیم کرد.

@@ -1,8 +1,6 @@
 # فصل ۱۳: سئو پیشرفته، متادیتای پویا و نقشه سایت (Advanced SEO, Metadata & Sitemap)
 
-یکی از بزرگ‌ترین نگرانی‌های تیم‌های بازاریابی و مدیران وب‌سایت در هنگام بررسی معماری Headless، تاثیر آن بر **بهینه‌سازی برای موتورهای جستجو (SEO)** است. وردپرس به خاطر افزونه‌های نام‌آشنایی مانند **Yoast SEO** و **Rank Math** بهشت سئوکاران به شمار می‌رود. در سوی مقابل، فریم‌ورک Next.js به دلیل رندرینگ سروری (Server-Side Rendering)، بهینه‌سازی خودکار فونت‌ها و تصاویر و ساخت فایل‌های سئو در زمان اجرا، ابزاری رویایی برای دستیابی به بالاترین امتیازات عملکرد گوگل است.
-
-در این فصل، این دو قدرت را با هم پیوند می‌زنیم: نویسندگان تنظیمات سئو، کلمات کلیدی، توضیحات متا و عکس‌های اشتراک‌گذاری شبکه‌های اجتماعی (Open Graph) را درون همان پیشخوان وردپرس پر می‌کنند؛ سپس Next.js با استفاده از تابع قدرتمند **`generateMetadata`**، فایل داینامیک **`sitemap.ts`**، فایل **`robots.ts`** و داده‌های ساختاریافته **JSON-LD**، خروجی بی‌نقصی برای خزنده‌های گوگل آماده می‌کند.
+یکی از بزرگ‌ترین نقاط قوت ترکیب **WordPress 7.1.4** و **Next.js 16.4.5**، دستیابی به بالاترین امتیازات سئو در موتورهای جستجو است. در این معماری، نویسندگان متادیتاها و تصاویر اشتراک‌گذاری شبکه‌های اجتماعی را در پیشخوان وردپرس وارد می‌کنند و Next.js با استفاده از **Apollo Client 4.3.7** این داده‌ها را خوانده و فایل‌های بهینه‌سازی‌شده `<head>`، `sitemap.xml` و داده‌های ساختاریافته **JSON-LD** را تولید می‌کند.
 
 ---
 
@@ -10,16 +8,15 @@
 
 ```mermaid
 flowchart TD
-    subgraph WP_Backend["۱. مدیریت سئو در وردپرس"]
-        Editor["سئوکار / نویسنده در وردپرس"] -->|"تنظیم عنوان متا، توضیحات و تصویر OG"| SEO_Plugin["پلاگین سئو (Yoast / Rank Math)"]
-        SEO_Plugin --> GQL_SEO["پلاگین WPGraphQL SEO"]
-        GQL_SEO --> Schema["اکسپوز شدن شیء seo در گراف‌کیوال"]
+    subgraph WP_Backend["۱. مدیریت سئو در وردپرس 7.1.4"]
+        Editor["سئوکار / نویسنده در وردپرس"] -->|"تنظیم عنوان متا، توضیحات و تصویر OG"| SEO_Config["افزونه سئو (Yoast / Rank Math)"]
+        SEO_Config --> Schema["اکسپوز شدن شیء seo در GraphQL 17.0.1"]
     end
 
-    subgraph Next_Frontend["۲. لایه تولید و انتشار در Next.js"]
-        Schema -->|"واکشی فیلدهای سئو"| GenMeta["تابع generateMetadata"]
+    subgraph Next_Frontend["۲. لایه تولید و انتشار در Next.js 16.4.5"]
+        Schema -->|"واکشی با Apollo Client 4.3.7"| GenMeta["تابع generateMetadata"]
         GenMeta --> HeadTag["تولید تگ‌های <title>، <meta>، OG و Twitter Cards"]
-
+        
         Schema -->|"واکشی لیست تمام صفحات"| Sitemap["فایل داینامیک app/sitemap.ts"]
         Sitemap --> XML["تولید خودکار sitemap.xml برای گوگل"]
 
@@ -33,27 +30,16 @@ flowchart TD
 
 ---
 
-## ۲. نصب افزونه پل ارتباطی سئو در وردپرس
+## ۲. پیاده‌سازی متادیتای پویا با Apollo Client (`generateMetadata`)
 
-برای اینکه فیلدهای سئو وارد Schema گراف‌کیوال شوند، بسته به افزونه‌ای که روی وردپرس استفاده می‌کنید، یکی از افزونه‌های زیر را نصب و فعال کنید:
-
-- **اگر از Yoast SEO استفاده می‌کنید:** افزونه رایگان **[WPGraphQL for Yoast SEO](https://github.com/ashhitch/wp-graphql-yoast-seo)** را نصب کنید.
-- **اگر از Rank Math استفاده می‌کنید:** افزونه رایگان **[WPGraphQL for Rank Math](https://github.com/alabdev/wp-graphql-rank-math)** را فعال نمایید.
-
-با فعال‌سازی افزونه پل، فیلدی به نام `seo` روی تمام نوشته‌ها، برگه‌ها و دسته‌بندی‌ها در WPGraphQL فعال می‌شود که تمامی متادیتاهای واردشده توسط کاربر را بازمی‌گرداند.
-
----
-
-## ۳. پیاده‌سازی متادیتای پویا در Next.js (`generateMetadata`)
-
-فریم‌ورک Next.js تابعی رزروشده به نام `generateMetadata` دارد که قبل از رندر شدن صفحه در سرور اجرا می‌شود و تگ‌های `<head>` را متناسب با همان مقاله خاص می‌سازد:
+در فایل `app/blog/[slug]/page.tsx`:
 
 ```tsx
-// app/blog/[slug]/page.tsx
 import type { Metadata } from "next";
-import { fetchGraphQL } from "@/lib/graphql";
+import { gql } from "@apollo/client";
+import { query } from "@/lib/apollo-client";
 
-interface SeoQueryResponse {
+interface SeoQueryData {
   post: {
     title: string;
     slug: string;
@@ -75,7 +61,7 @@ interface SeoQueryResponse {
   } | null;
 }
 
-const GET_POST_SEO = `
+const GET_POST_SEO = gql`
   query GetPostSeo($slug: ID!) {
     post(id: $slug, idType: SLUG) {
       title
@@ -108,26 +94,27 @@ export async function generateMetadata({
   const decodedSlug = decodeURIComponent(slug);
 
   try {
-    const data = await fetchGraphQL<SeoQueryResponse>(GET_POST_SEO, {
+    const { data } = await query<SeoQueryData>({
+      query: GET_POST_SEO,
       variables: { slug: decodedSlug },
-      tags: [`post-${decodedSlug}`],
+      context: {
+        fetchOptions: {
+          next: {
+            tags: [`post-${decodedSlug}`],
+          },
+        },
+      },
     });
 
-    const post = data.post;
+    const post = data?.post;
     if (!post) {
-      return {
-        title: "مطلب یافت نشد",
-      };
+      return { title: "مطلب یافت نشد" };
     }
 
     const seo = post.seo;
-    const siteUrl =
-      process.env.NEXT_PUBLIC_SITE_URL || "https://yourdomain.com";
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://yourdomain.com";
     const postUrl = `${siteUrl}/blog/${post.slug}`;
-
-    // انتخاب تصویر برای شبکه‌های اجتماعی
-    const ogImage =
-      seo?.opengraphImage?.sourceUrl || `${siteUrl}/og-default.jpg`;
+    const ogImage = seo?.opengraphImage?.sourceUrl || `${siteUrl}/og-default.jpg`;
 
     return {
       title: seo?.title || post.title,
@@ -139,7 +126,7 @@ export async function generateMetadata({
         title: seo?.opengraphTitle || seo?.title || post.title,
         description: seo?.opengraphDescription || seo?.metaDesc,
         url: postUrl,
-        siteName: "Headless WP Journal",
+        siteName: "Headless Journal",
         locale: "fa_IR",
         type: "article",
         images: [
@@ -163,27 +150,22 @@ export async function generateMetadata({
       },
     };
   } catch (err) {
-    return {
-      title: "مقاله تخصصی وبلاگ",
-    };
+    return { title: "مقاله تخصصی" };
   }
 }
 ```
 
 ---
 
-## ۴. تولید خودکار و داینامیک نقشه سایت (`app/sitemap.ts`)
-
-یکی از بزرگ‌ترین اشتباهات در سایت‌های Headless این است که توسعه‌دهندگان نقشه سایت را از وردپرس (`cms.domain.com/sitemap.xml`) به گوگل معرفی می‌کنند. این کار باعث ایندکس اشتباه دامنه‌ی بک‌اند می‌شود!
-
-نقشه سایت باید روی همان دامنه اصلی فرانت‌اند و با آدرس‌های تمیز تولید شود. فایل `app/sitemap.ts` به طور خودکار فایل XML استاندارد را برای تمامی نوشته‌ها و برگه‌ها تولید می‌کند:
+## ۳. تولید داینامیک نقشه سایت با Apollo Client (`app/sitemap.ts`)
 
 ```typescript
 // app/sitemap.ts
 import { MetadataRoute } from "next";
-import { fetchGraphQL } from "@/lib/graphql";
+import { gql } from "@apollo/client";
+import { query } from "@/lib/apollo-client";
 
-interface AllEntriesSitemapQuery {
+interface AllEntriesSitemapData {
   posts: {
     nodes: Array<{
       slug: string;
@@ -198,7 +180,7 @@ interface AllEntriesSitemapQuery {
   };
 }
 
-const GET_ALL_SITEMAP_ENTRIES = `
+const GET_ALL_SITEMAP_ENTRIES = gql`
   query GetAllSitemapEntries {
     posts(first: 500) {
       nodes {
@@ -219,15 +201,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://yourdomain.com";
 
   try {
-    const data = await fetchGraphQL<AllEntriesSitemapQuery>(
-      GET_ALL_SITEMAP_ENTRIES,
-      {
-        tags: ["sitemap"],
-        revalidate: 3600, // به‌روزرسانی ساعتی
+    const { data } = await query<AllEntriesSitemapData>({
+      query: GET_ALL_SITEMAP_ENTRIES,
+      context: {
+        fetchOptions: {
+          next: {
+            tags: ["sitemap"],
+            revalidate: 3600,
+          },
+        },
       },
-    );
+    });
 
-    // ۱. صفحات استاتیک اصلی سایت
     const staticPages: MetadataRoute.Sitemap = [
       {
         url: siteUrl,
@@ -243,7 +228,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       },
     ];
 
-    // ۲. صفحات تک‌پست‌های وبلاگ
     const postEntries: MetadataRoute.Sitemap = data.posts.nodes.map((post) => ({
       url: `${siteUrl}/blog/${post.slug}`,
       lastModified: new Date(post.modified),
@@ -251,7 +235,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       priority: 0.8,
     }));
 
-    // ۳. برگه‌های ایستا
     const pageEntries: MetadataRoute.Sitemap = data.pages.nodes.map((page) => ({
       url: `${siteUrl}/${page.slug}`,
       lastModified: new Date(page.modified),
@@ -261,50 +244,15 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
 
     return [...staticPages, ...postEntries, ...pageEntries];
   } catch (error) {
-    console.error("خطا در تولید داینامیک نقشه سایت:", error);
-    return [
-      {
-        url: siteUrl,
-        lastModified: new Date(),
-      },
-    ];
+    console.error("خطا در تولید نقشه سایت:", error);
+    return [{ url: siteUrl, lastModified: new Date() }];
   }
 }
 ```
 
-با این فایل، گوگل به آدرس `https://yourdomain.com/sitemap.xml` دسترسی خواهد داشت.
-
 ---
 
-## ۵. پیکربندی فایل ربات‌ها (`app/robots.ts`)
-
-فایل `robots.txt` قوانین خزش موتورهای جستجو را مشخص می‌کند:
-
-```typescript
-// app/robots.ts
-import { MetadataRoute } from "next";
-
-export default function robots(): MetadataRoute.Robots {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://yourdomain.com";
-
-  return {
-    rules: [
-      {
-        userAgent: "*",
-        allow: "/",
-        disallow: ["/api/", "/dashboard/", "/profile/"],
-      },
-    ],
-    sitemap: `${siteUrl}/sitemap.xml`,
-  };
-}
-```
-
----
-
-## ۶. داده‌های ساختاریافته (JSON-LD Structured Data)
-
-داده‌های ساختاریافته به موتورهای جستجو کمک می‌کنند تا نوع محتوا (مقاله، محصول، نویسنده، تاریخ انتشار) را به صورت شفاف درک کنند و امکان نمایش ستاره‌های امتیازدهی، تصاویر بندانگشتی و ریچ‌اسنیپت‌ها در گوگل فراهم شود:
+## ۴. داده‌های ساختاریافته (JSON-LD Structured Data)
 
 ```tsx
 // components/ArticleJsonLd.tsx
@@ -343,7 +291,7 @@ export function ArticleJsonLd({
     ],
     publisher: {
       "@type": "Organization",
-      name: "Headless WP Journal",
+      name: "Headless Journal",
       logo: {
         "@type": "ImageObject",
         url: "https://yourdomain.com/logo.png",
@@ -364,31 +312,14 @@ export function ArticleJsonLd({
 }
 ```
 
-این کامپوننت را درون صفحه تک‌پست (`app/blog/[slug]/page.tsx`) قرار دهید تا اسکیما به شکل استاندارد به ربات‌های گوگل تحویل داده شود.
-
 ---
 
-## ۷. چک‌لیست سئو تکنیکال برای محیط پروداکشن
-
-| عنوان بررسی                     | وضعیت مطلوب                                             | تایید |
-| ------------------------------- | ------------------------------------------------------- | :---: |
-| **تنظیم Noindex روی وردپرس**    | گزینه Discourage search engines در وردپرس فعال است      |  [ ]  |
-| **آدرس‌های Canonical**          | تمام صفحات به دامنه تمیز `yourdomain.com` اشاره می‌کنند |  [ ]  |
-| **تگ‌های Open Graph و Twitter** | تصویر پیش‌فرض، عنوان و توضیحات تنظیم شده است            |  [ ]  |
-| **نقشه سایت (Sitemap.xml)**     | آدرس‌های فرانت با تاریخ `lastModified` تولید می‌شوند    |  [ ]  |
-| **فایل Robots.txt**             | روت‌های عمومی باز بوده و مسیرهای `/api/` مسدودند        |  [ ]  |
-| **اسکیما JSON-LD**              | تگ استاندارد Article در تمام پست‌ها تزریق شده است       |  [ ]  |
-| **تگ‌های Alt تصاویر**           | تمام تصاویر دارای متن جایگزین معنادار هستند             |  [ ]  |
-
----
-
-## ۸. خلاصه فصل
+## ۵. خلاصه فصل
 
 در این فصل:
+- ساختار داده‌های سئو را با **Apollo Client 4.3.7** و **GraphQL 17.0.1** هماهنگ کردیم.
+- با تابع `generateMetadata` در Next.js 16.4.5، تگ‌های غنی OpenGraph و کارت‌های توییتر را ساختیم.
+- نقشه سایت خودکار `sitemap.ts` و فایل `robots.ts` را در ریشه فرانت پیاده کردیم.
+- با کامپوننت داده ساختاریافته JSON-LD، درک عمیق موتورهای جستجو از محتوا را تثبیت نمودیم.
 
-- متصل کردن افزونه‌های سئوی وردپرس (Yoast و Rank Math) به WPGraphQL را آموختیم.
-- با تابع مدرن `generateMetadata` در App Router، متادیتای پویا و کارت‌های شبکه‌های اجتماعی را ساختیم.
-- با فایل‌های بومی `app/sitemap.ts` و `app/robots.ts`، سیستم خودکار ایندکس را در فرانت پیاده‌سازی کردیم.
-- با داده‌های ساختاریافته JSON-LD، حضور قدرتمند در نتایج ویژه گوگل (Rich Results) را تضمین نمودیم.
-
-در **فصل چهاردهم (فصل پایانی)**، استراتژی کش چندلایه، شاخص‌های حیاتی سرعت و کارایی (Core Web Vitals) و گزینه‌های استقرار نهایی در محیط پروداکشن را بررسی خواهیم کرد.
+در **فصل چهاردهم**، کارایی و کش چندلایه و فرآیند نهایی استقرار را تکمیل خواهیم کرد.
