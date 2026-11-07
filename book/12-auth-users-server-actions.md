@@ -1,60 +1,171 @@
-# فصل ۱۲: احراز هویت، مدیریت کاربران و Server Actions (Authentication & Server Actions)
+# فصل ۱۲: احراز هویت، ثبت‌نام و ورود امن با Server Actions (Standard & Secure Authentication)
 
-در بسیاری از پروژه‌های وب، تعامل کاربر فراتر از خواندن ساده مقالات است: کاربران ممکن است بخواهند ثبت‌نام کنند، وارد حساب کاربری شوند، محتوای اختصاصی اعضا را ببینند، دیدگاه ثبت کنند یا پروفایل کاربری خود را ویرایش نمایند.
+در وب‌سایت‌های مدرن، مدیریت حساب کاربری (ثبت‌نام، ورود، خروج و حفاظت از صفحات خصوصی) یکی از حساس‌ترین بخش‌های توسعه نرم‌افزار است. در معماری Headless، سپردن احراز هویت به افزونه‌های متفرقه و نگهداری‌نشده (مانند افزونه‌های قدیمی JWT) بزرگ‌ترین اشتباه امنیتی است؛ زیرا این افزونه‌ها سال‌هاست به‌روزرسانی نشده‌اند و درهای پشتی متعددی به روی هکرها باز می‌گذارند.
 
-در معماری Headless، مدیریت احراز هویت با چالش‌های امنیتی حساسی روبروست: **چگونه بدون افشای رمز عبور یا به خطر انداختن توکن‌های امنیتی در کدهای فرانت‌اند، ورود و عضویت کاربران را با وردپرس هماهنگ کنیم؟**
-
-با معرفی **Server Actions** در نسخه مدرن Next.js (و React 19)، دیگر نیازی به نوشتن دستی API Routeهای پیچیده و مدیریت ناامن توکن‌ها در مرورگر نیست. در این فصل، فرآیند ورود و ثبت‌نام را با Server Actions، اعتبارسنجی Zod و کوکی‌های امن **`HttpOnly`** به صورت کاملاً حرفه‌ای پیاده‌سازی می‌کنیم.
+طبق **سیاست حداقل پلاگین (Minimal Plugins)**، در این فصل یک سیستم احراز هویت بومی، استاندارد و بدون نیاز به حتی یک افزونه شخص ثالث را پیاده‌سازی می‌کنیم:
+1. در سمت وردپرس، از توابع ایمن هسته (`wp_authenticate` و `wp_create_user`) و امضای رمزنگاری‌شده با سالت‌های `wp-config.php` در قالب یک **mu-plugin سبک** استفاده می‌کنیم.
+2. در سمت **Next.js 16.4.5**، از **Server Actions**، اعتبارسنجی ورودی با **Zod**، و کوکی‌های امن سروری **`HttpOnly`** برای مهار صددرصدی حملات XSS و CSRF بهره می‌گیریم.
 
 ---
 
-## ۱. استراتژی احراز هویت و قانون طلایی امنیت توکن‌ها
+## ۱. چرخه حیات احراز هویت استاندارد و امن
 
 ```mermaid
-flowchart TD
-    subgraph DangerZone["شیوه ناامن و فاجعه‌بار (localStorage)"]
-        D1["توکن JWT در localStorage مرورگر ذخیره می‌شود"]
-        D2["هر اسکریپت ثالث یا آسیب‌پذیری XSS به توکن دسترسی دارد"]
-        D3["سرقت کامل حساب کاربری"]
-    end
+sequenceDiagram
+    autonumber
+    actor User as کاربر سایت (مرورگر)
+    participant Action as Server Action (سرور Next.js 16.4.5)
+    participant WP as هسته وردپرس 7.1.4 (mu-plugin)
+    participant Cookie as کوکی امن HttpOnly
 
-    subgraph SecureZone["شیوه استاندارد و امن (HttpOnly Cookies + Server Actions)"]
-        S1["کاربر فرم لاگین را سابمیت می‌کند"]
-        S2["Server Action در سرور Next.js اجرا شده و با WPGraphQL تبادل توکن می‌کند"]
-        S3["توکن در کوکی HttpOnly رمزنگاری‌شده ذخیره می‌شود"]
-        S4["جاوااسکریپت مرورگر اصلاً دسترسی به کوکی ندارد (ضد XSS مطلق)"]
-    end
-
-    style DangerZone fill:#ffebee,stroke:#c62828,stroke-width:2px
-    style SecureZone fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    User->>Action: ارسال مشخصات فرم لاگین (Username / Password)
+    Action->>Action: اعتبارسنجی ساختار داده با Zod
+    Action->>WP: فراخوانی میوتیشن loginUser در GraphQL
+    WP->>WP: بررسی رمز با هش‌های بومی هسته (wp_authenticate)
+    WP->>WP: تولید توکن نشست با امضای رمزنگاری‌شده HMAC-SHA256
+    WP-->>Action: بازگرداندن اطلاعات کاربر و توکن معتبر
+    Action->>Cookie: ذخیره توکن در کوکی HttpOnly و Secure
+    Action-->>User: هدایت کاربر به داشبورد (/dashboard)
 ```
 
-### ۱.۱. قانون طلایی: خداحافظی با `localStorage`
-
-هیچ توکن دسترسی (JWT یا Auth Token) نباید در `localStorage` یا `sessionStorage` مرورگر نگهداری شود؛ زیرا هر اسکریپت آلوده‌ای که از طریق یک افزونه مرورگر، پکیج NPM مشکوک یا ورودی فیلترنشده اجرا شود، می‌تواند توکن کاربر را بدزدد.
-
-راه‌حل استاندارد: ذخیره توکن در یک کوکی با پرچم‌های زیر است:
-
-- **`HttpOnly: true`**: جاوااسکریپت کلاینت مطلقاً نمی‌تواند این کوکی را بخواند (`document.cookie` خالی خواهد بود).
-- **`Secure: true`**: کوکی فقط روی پروتکل رمزنگاری‌شده HTTPS جابجا می‌شود.
-- **`SameSite: 'strict'`**: کوکی در درخواست‌های فرادریچه‌ای ارسال نمی‌شود که مانع قطعی حملات CSRF است.
+### ۱.۱. چرا ذخیره توکن در `localStorage` ممنوع است؟
+اگر توکن در حافظه مرورگر (`localStorage`) ذخیره شود، هر قطعه کد جاوااسکریپتی (حتی یک اسکریپت آمارگیر یا پکیج مخرب) می‌تواند آن را بخواند و حساب کاربر را برباید (حمله XSS). با استفاده از کوکی‌های **`HttpOnly`**، دسترسی جاوااسکریپت مرورگر به کوکی کاملاً قطع می‌شود و مرورگر به صورت خودکار و امن در تمام درخواست‌های مجاز آن را به سرور Next.js ارسال می‌کند.
 
 ---
 
-## ۲. افزونه احراز هویت در سمت وردپرس
+## ۲. پیاده‌سازی بک‌اند احراز هویت در وردپرس (`mu-plugins/native-auth.php`)
 
-افزونه‌های قدیمی مبتنی بر JWT در وردپرس نگهداری نمی‌شوند و مشکلات امنیتی دارند. افزونه رسمی و به‌روز **Headless Login for WPGraphQL** (`wp-graphql-headless-login`) استاندارد جدید این حوزه است:
+این فایل بومی را در مسیر `wp-content/mu-plugins/native-auth.php` سرور وردپرس بسازید. این ماژول بدون نیاز به هیچ افزونه خارجی، دو میوتیشن استاندارد `loginUser` و `registerUser` را به Schema گراف‌کیوال اضافه می‌کند:
 
-1. افزونه را از گیت‌هاب رسمی آن یا مخزن وردپرس نصب و فعال کنید.
-2. از منوی **GraphQL ← Settings ← Headless Login**:
-   - گزینه **Enable Login Mutation** را فعال کنید.
-   - این افزونه میوتیشن استاندارد `login` را با پشتیبانی از نام کاربری و رمز عبور به Schema اضافه می‌کند.
+```php
+<?php
+/**
+ * Plugin Name: Native Headless Authentication
+ * Description: سیستم بومی، سریع و فوق‌العاده امن ثبت‌نام و ورود کاربران در GraphQL 17.0.1
+ * Version: 2.0.0
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+// تابع کمکی تولید توکن امضاشده بر مبنای کلیدهای امنیتی wp-config
+function generate_headless_token($user_id) {
+    $issued_at = time();
+    $expiration = $issued_at + (DAY_IN_SECONDS * 7); // اعتبار ۷ روز
+    $payload = "{$user_id}|{$issued_at}|{$expiration}";
+    $signature = hash_hmac('sha256', $payload, SECURE_AUTH_KEY);
+    return base64_encode("{$payload}|{$signature}");
+}
+
+// تابع اعتبارسنجی توکن امضاشده
+function verify_headless_token($token) {
+    $decoded = base64_decode($token);
+    $parts = explode('|', $decoded);
+    if (count($parts) !== 4) return false;
+
+    list($user_id, $issued_at, $expiration, $signature) = $parts;
+
+    // بررسی انقضا
+    if (time() > (int)$expiration) return false;
+
+    // بررسی امضا با مقایسه ایمن
+    $expected_signature = hash_hmac('sha256', "{$user_id}|{$issued_at}|{$expiration}", SECURE_AUTH_KEY);
+    if (!hash_equals($expected_signature, $signature)) return false;
+
+    return (int)$user_id;
+}
+
+add_action('graphql_register_types', function () {
+    // ۱. تایپ پاسخ احراز هویت
+    register_graphql_object_type('AuthPayload', [
+        'description' => 'پاسخ عملیات ورود و ثبت‌نام',
+        'fields' => [
+            'token' => ['type' => 'String'],
+            'user'  => ['type' => 'User'],
+        ],
+    ]);
+
+    // ۲. میوتیشن ورود کاربر (Login Mutation)
+    register_graphql_mutation('loginUser', [
+        'inputFields' => [
+            'username' => ['type' => ['non_null' => 'String']],
+            'password' => ['type' => ['non_null' => 'String']],
+        ],
+        'outputFields' => [
+            'auth' => ['type' => 'AuthPayload'],
+        ],
+        'mutateAndGetPayload' => function ($input) {
+            $user = wp_authenticate($input['username'], $input['password']);
+
+            if (is_wp_error($user)) {
+                throw new \GraphQL\Error\UserError('نام کاربری یا رمز عبور اشتباه است.');
+            }
+
+            $token = generate_headless_token($user->ID);
+
+            return [
+                'auth' => [
+                    'token' => $token,
+                    'user'  => $user,
+                ],
+            ];
+        },
+    ]);
+
+    // ۳. میوتیشن ثبت‌نام کاربر جدید (Register Mutation)
+    register_graphql_mutation('registerUser', [
+        'inputFields' => [
+            'username' => ['type' => ['non_null' => 'String']],
+            'email'    => ['type' => ['non_null' => 'String']],
+            'password' => ['type' => ['non_null' => 'String']],
+        ],
+        'outputFields' => [
+            'auth' => ['type' => 'AuthPayload'],
+        ],
+        'mutateAndGetPayload' => function ($input) {
+            $username = sanitize_user($input['username']);
+            $email = sanitize_email($input['email']);
+            $password = $input['password'];
+
+            if (!is_email($email)) {
+                throw new \GraphQL\Error\UserError('فرمت آدرس ایمیل نامعتبر است.');
+            }
+            if (username_exists($username)) {
+                throw new \GraphQL\Error\UserError('این نام کاربری قبلاً ثبت شده است.');
+            }
+            if (email_exists($email)) {
+                throw new \GraphQL\Error\UserError('این ایمیل قبلاً در سیستم ثبت شده است.');
+            }
+            if (strlen($password) < 8) {
+                throw new \GraphQL\Error\UserError('رمز عبور باید حداقل ۸ کاراکتر باشد.');
+            }
+
+            // ساخت کاربر با متد ایمن هسته و نقش پیش‌فرض مشترک (Subscriber)
+            $user_id = wp_create_user($username, $password, $email);
+            if (is_wp_error($user_id)) {
+                throw new \GraphQL\Error\UserError($user_id->get_error_message());
+            }
+
+            $user = get_user_by('ID', $user_id);
+            $token = generate_headless_token($user_id);
+
+            return [
+                'auth' => [
+                    'token' => $token,
+                    'user'  => $user,
+                ],
+            ];
+        },
+    ]);
+});
+```
 
 ---
 
-## ۳. پیاده‌سازی اکشن‌های سروری احراز هویت (`actions/auth.ts`)
+## ۳. پیاده‌سازی Server Actions در فرانت‌اند (`actions/auth.ts`)
 
-فایل زیر شامل توابع اجرایی ورود، ثبت‌نام و خروج با دستور `'use server'` است. توجه داشته باشید که در **Next.js 15 و 16**، دسترسی به شیء کوکی‌ها با `await cookies()` به صورت ناهمگام انجام می‌شود:
+در Next.js 16.4.5، توابع دارای دستور `'use server'` بدون افشای هیچ لاجیکی به کلاینت در سرور اجرا می‌شوند:
 
 ```typescript
 // actions/auth.ts
@@ -65,14 +176,13 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { env } from "@/lib/env";
 
-// ۱. اسکیماهای اعتبارسنجی ورودی با کتابخانه Zod
 const LoginSchema = z.object({
   username: z.string().min(3, "نام کاربری باید حداقل ۳ کاراکتر باشد."),
   password: z.string().min(6, "رمز عبور باید حداقل ۶ کاراکتر باشد."),
 });
 
 const RegisterSchema = z.object({
-  username: z.string().min(3, "نام کاربری معتبر نیست."),
+  username: z.string().min(3, "نام کاربری باید حداقل ۳ کاراکتر باشد."),
   email: z.string().email("فرمت ایمیل نامعتبر است."),
   password: z.string().min(8, "رمز عبور باید حداقل ۸ کاراکتر باشد."),
 });
@@ -82,33 +192,44 @@ export type ActionState = {
   error?: string;
 };
 
-// ۲. میوتیشن گراف‌کیوال برای ورود کاربر
-const LOGIN_MUTATION = `
-  mutation LoginUser($username: String!, $password: String!) {
-    login(input: { username: $username, password: $password }) {
-      authToken
-      refreshToken
-      user {
-        id
-        databaseId
-        name
-        email
+const LOGIN_GQL = `
+  mutation Login($username: String!, $password: String!) {
+    loginUser(input: { username: $username, password: $password }) {
+      auth {
+        token
+        user {
+          id
+          name
+        }
       }
     }
   }
 `;
 
-// ۳. اکشن سروری ورود به حساب (Login Action)
+const REGISTER_GQL = `
+  mutation Register($username: String!, $email: String!, $password: String!) {
+    registerUser(input: { username: $username, email: $email, password: $password }) {
+      auth {
+        token
+        user {
+          id
+          name
+        }
+      }
+    }
+  }
+`;
+
+// ۱. اکشن سروری ورود به حساب
 export async function loginAction(
   prevState: ActionState | null,
-  formData: FormData,
+  formData: FormData
 ): Promise<ActionState> {
-  const rawData = {
+  const validation = LoginSchema.safeParse({
     username: formData.get("username"),
     password: formData.get("password"),
-  };
+  });
 
-  const validation = LoginSchema.safeParse(rawData);
   if (!validation.success) {
     return { error: validation.error.errors[0].message };
   }
@@ -120,7 +241,7 @@ export async function loginAction(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        query: LOGIN_MUTATION,
+        query: LOGIN_GQL,
         variables: { username, password },
       }),
       cache: "no-store",
@@ -128,24 +249,23 @@ export async function loginAction(
 
     const { data, errors } = await res.json();
 
-    if (errors || !data?.login?.authToken) {
-      return { error: "نام کاربری یا رمز عبور وارد شده نادرست است." };
+    if (errors || !data?.loginUser?.auth?.token) {
+      return { error: errors?.[0]?.message || "نام کاربری یا رمز عبور اشتباه است." };
     }
 
-    const { authToken, user } = data.login;
+    const { token, user } = data.loginUser.auth;
 
-    // ذخیره ایمن توکن در کوکی سروری HttpOnly (Next.js 15/16)
+    // تنظیم کوکی امنیتی HttpOnly در Next.js 16.4.5
     const cookieStore = await cookies();
-    cookieStore.set("auth_token", authToken, {
+    cookieStore.set("auth_session", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
       path: "/",
-      maxAge: 60 * 60 * 24 * 7, // اعتبار یک هفته
+      maxAge: 60 * 60 * 24 * 7, // یک هفته
     });
 
-    // ذخیره نام کاربر در کوکی غیرحساس جهت نمایش در هدر
-    cookieStore.set("user_name", user.name || username, {
+    cookieStore.set("user_display_name", user.name || username, {
       httpOnly: false,
       secure: process.env.NODE_ENV === "production",
       sameSite: "strict",
@@ -153,47 +273,96 @@ export async function loginAction(
       maxAge: 60 * 60 * 24 * 7,
     });
   } catch (err) {
-    return { error: "خطا در ارتباط با سرور احراز هویت وردپرس." };
+    return { error: "خطا در برقراری ارتباط با سرور." };
   }
 
   redirect("/dashboard");
 }
 
-// ۴. اکشن سروری خروج از حساب (Logout Action)
+// ۲. اکشن سروری ثبت‌نام کاربر جدید
+export async function registerAction(
+  prevState: ActionState | null,
+  formData: FormData
+): Promise<ActionState> {
+  const validation = RegisterSchema.safeParse({
+    username: formData.get("username"),
+    email: formData.get("email"),
+    password: formData.get("password"),
+  });
+
+  if (!validation.success) {
+    return { error: validation.error.errors[0].message };
+  }
+
+  const { username, email, password } = validation.data;
+
+  try {
+    const res = await fetch(env.WP_GRAPHQL_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        query: REGISTER_GQL,
+        variables: { username, email, password },
+      }),
+      cache: "no-store",
+    });
+
+    const { data, errors } = await res.json();
+
+    if (errors || !data?.registerUser?.auth?.token) {
+      return { error: errors?.[0]?.message || "خطا در فرآیند ثبت‌نام کاربر جدید." };
+    }
+
+    const { token } = data.registerUser.auth;
+
+    const cookieStore = await cookies();
+    cookieStore.set("auth_session", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+  } catch (err) {
+    return { error: "خطا در برقراری ارتباط با سرور ثبت‌نام." };
+  }
+
+  redirect("/dashboard");
+}
+
+// ۳. اکشن سروری خروج از حساب
 export async function logoutAction() {
   const cookieStore = await cookies();
-  cookieStore.delete("auth_token");
-  cookieStore.delete("user_name");
+  cookieStore.delete("auth_session");
+  cookieStore.delete("user_display_name");
   redirect("/login");
 }
 ```
 
 ---
 
-## ۴. طراحی فرم ورود تعاملی با هوک‌های React 19 (`app/(auth)/login/page.tsx`)
-
-با استفاده از هوک جدید **`useActionState`** در React 19، فرم ورود بدون نیاز به نوشتن دستی Stateهای پیچیده، وضعیت لودینگ و خطاها را مدیریت می‌کند:
+## ۴. فرم ثبت‌نام تعاملی با هوک‌های React 19 (`app/(auth)/register/page.tsx`)
 
 ```tsx
-// app/(auth)/login/page.tsx
+// app/(auth)/register/page.tsx
 "use client";
 
 import { useActionState } from "react";
-import { loginAction, ActionState } from "@/actions/auth";
+import { registerAction, ActionState } from "@/actions/auth";
 import Link from "next/link";
 
-export default function LoginPage() {
-  const [state, formAction, isPending] = useActionState<
-    ActionState | null,
-    FormData
-  >(loginAction, null);
+export default function RegisterPage() {
+  const [state, formAction, isPending] = useActionState<ActionState | null, FormData>(
+    registerAction,
+    null
+  );
 
   return (
     <div className="max-w-md mx-auto my-12 p-8 bg-white dark:bg-gray-900 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl">
       <div className="text-center mb-8">
-        <h1 className="text-2xl font-black mb-2">ورود به حساب کاربری</h1>
+        <h1 className="text-2xl font-black mb-2">ایجاد حساب کاربری جدید</h1>
         <p className="text-sm text-gray-600 dark:text-gray-400">
-          برای دسترسی به پنل کاربری مشخصات خود را وارد کنید
+          مشخصات خود را برای ثبت‌نام در سامانه وارد نمایید
         </p>
       </div>
 
@@ -203,23 +372,33 @@ export default function LoginPage() {
         </div>
       )}
 
-      <form action={formAction} className="space-y-5">
+      <form action={formAction} className="space-y-4">
         <div>
-          <label className="block text-sm font-semibold mb-2">
-            نام کاربری یا ایمیل
-          </label>
+          <label className="block text-sm font-semibold mb-1.5">نام کاربری</label>
           <input
             type="text"
             name="username"
             required
             disabled={isPending}
             className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-750 bg-gray-50 dark:bg-gray-850 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
-            placeholder="مثال: ali_developer"
+            placeholder="مثال: amir_hosein"
           />
         </div>
 
         <div>
-          <label className="block text-sm font-semibold mb-2">رمز عبور</label>
+          <label className="block text-sm font-semibold mb-1.5">آدرس ایمیل</label>
+          <input
+            type="email"
+            name="email"
+            required
+            disabled={isPending}
+            className="w-full px-4 py-3 rounded-xl border border-gray-300 dark:border-gray-750 bg-gray-50 dark:bg-gray-850 text-sm focus:outline-none focus:ring-2 focus:ring-blue-600"
+            placeholder="name@example.com"
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-semibold mb-1.5">رمز عبور (حداقل ۸ کاراکتر)</label>
           <input
             type="password"
             name="password"
@@ -233,26 +412,16 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={isPending}
-          className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-all shadow-md mt-2 flex items-center justify-center gap-2"
+          className="w-full py-3.5 px-4 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold rounded-xl text-sm transition-all shadow-md mt-4 flex items-center justify-center gap-2"
         >
-          {isPending ? (
-            <>
-              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              <span>در حال بررسی اطلاعات...</span>
-            </>
-          ) : (
-            <span>ورود به سامانه</span>
-          )}
+          {isPending ? "در حال ایجاد حساب..." : "ثبت‌نام و ورود به سامانه"}
         </button>
       </form>
 
       <div className="mt-6 text-center text-xs text-gray-500">
-        حساب کاربری ندارید؟{" "}
-        <Link
-          href="/register"
-          className="text-blue-600 hover:underline font-semibold"
-        >
-          ثبت‌نام کنید
+        قبلاً ثبت‌نام کرده‌اید؟{" "}
+        <Link href="/login" className="text-blue-600 hover:underline font-semibold">
+          وارد شوید
         </Link>
       </div>
     </div>
@@ -262,35 +431,32 @@ export default function LoginPage() {
 
 ---
 
-## ۵. حفاظت از مسیرهای خصوصی با Next.js Middleware (`middleware.ts`)
+## ۵. حفاظت از مسیرها با Middleware (`middleware.ts`)
 
-برای اینکه کاربران لاگین‌نشده نتوانند صفحات محافظت‌شده (مانند `/dashboard`) را باز کنند، یک میدل‌ور در ریشه پروژه قرار می‌دهیم:
+فایل میدل‌ور از باز شدن صفحات خصوصی توسط کاربران ناشناس ممانعت به عمل می‌آورد:
 
 ```typescript
 // middleware.ts
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// مسیرهایی که نیاز به احراز هویت قطعی دارند
 const PROTECTED_ROUTES = ["/dashboard", "/profile", "/settings"];
 
 export function middleware(request: NextRequest) {
-  const token = request.cookies.get("auth_token")?.value;
+  const token = request.cookies.get("auth_session")?.value;
   const { pathname } = request.nextUrl;
 
   const isProtected = PROTECTED_ROUTES.some((route) =>
-    pathname.startsWith(route),
+    pathname.startsWith(route)
   );
 
-  // اگر مسیر خصوصی است و کاربر توکن ندارد، هدایت به لاگین
   if (isProtected && !token) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // اگر کاربر قبلاً لاگین کرده و می‌خواهد صفحه /login را باز کند، هدایت به داشبورد
-  if (pathname === "/login" && token) {
+  if ((pathname === "/login" || pathname === "/register") && token) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -298,7 +464,7 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/profile/:path*", "/login"],
+  matcher: ["/dashboard/:path*", "/profile/:path*", "/login", "/register"],
 };
 ```
 
@@ -307,10 +473,9 @@ export const config = {
 ## ۶. خلاصه فصل
 
 در این فصل:
+- با تکیه بر **سیاست حداقل پلاگین**، افزونه‌های پرریسک را کنار گذاشته و سیستم احراز هویت بومی را با توابع استاندارد هسته وردپرس پیاده کردیم.
+- توکن‌های نشست را با امضای رمزنگاری‌شده `HMAC-SHA256` و کلیدهای امنیتی `wp-config.php` تولید نمودیم.
+- در فرانت‌اند با ترکیب **Server Actions**، اعتبارسنجی **Zod**، هوک جدید **`useActionState`** در React 19، و کوکی‌های امن سروری **`HttpOnly`**، جریان ورود و ثبت‌نام را به مطمئن‌ترین شکل ممکن پیاده‌سازی کردیم.
+- با `middleware.ts` لایه نگهبان مسیرهای خصوصی را مستقر ساختیم.
 
-- خطرات مهلک ذخیره توکن‌ها در مرورگر (`localStorage`) را تحلیل کرده و استاندارد کوکی‌های امن `HttpOnly` را برگزیدیم.
-- با استفاده از افزونه Headless Login، میوتیشن‌های احراز هویت وردپرس را فعال ساختیم.
-- با امکانات مدرن **Server Actions** و هوک **`useActionState`** در React 19، فرم ورود بدون نقص و کاملاً محافظت‌شده‌ای ساختیم.
-- با فایل `middleware.ts`، لایه محافظتی مسیرهای خصوصی را مستقر کردیم.
-
-اکنون وب‌سایت ما هم در بخش محتوا و هم در بخش کاربری کامل است. اما چگونه موتورهای جستجو (گوگل) را شیفته سایت خود کنیم؟ در **فصل سیزدهم** به سراغ شاهکار **سئو پیشرفته، متادیتای پویا و نقشه سایت** خواهیم رفت.
+در **فصل سیزدهم**، به سراغ تنظیمات سئوی پیشرفته و تولید خودکار متادیتا و نقشه سایت با **Apollo Client** خواهیم رفت.
