@@ -17,11 +17,11 @@ npx create-next-app@latest frontend --typescript --tailwind --eslint --app
 ```
 
 ### ۱.۱. نصب پکیج‌های استاندارد Apollo Client 4.3.7 و ابزارهای مرتبط
-کتابخانه رسمی Apollo برای Next.js App Router و پکیج‌های ضروری را نصب کنید:
+کتابخانه رسمی Apollo برای Next.js App Router، پکیج Auth.js v5 و سایر ابزارهای ضروری را نصب کنید:
 
 ```bash
 npm install @apollo/client@^4.3.7 @apollo/client-integration-nextjs graphql@^17.0.1
-npm install isomorphic-dompurify zod
+npm install next-auth@beta isomorphic-dompurify zod
 npm install -D @types/dompurify
 ```
 
@@ -32,12 +32,14 @@ npm install -D @types/dompurify
 ```plaintext
 frontend/
 ├── app/                        # روت‌های App Router در Next.js 16.4.5
-│   ├── (auth)/                 # ورود و ثبت‌نام با Server Actions
+│   ├── (auth)/                 # ورود و ثبت‌نام با Server Actions و Auth.js
 │   │   ├── login/page.tsx
 │   │   └── register/page.tsx
-│   ├── api/                    # Route Handlers (Revalidation, Draft Mode)
-│   │   ├── draft/route.ts
-│   │   └── revalidate/route.ts
+│   ├── api/                    # Route Handlers
+│   │   ├── auth/[...nextauth]/ # اندپوینت‌های رسمی Auth.js
+│   │   │   └── route.ts
+│   │   ├── draft/route.ts      # فعال‌سازی Draft Mode
+│   │   └── revalidate/route.ts # وب‌هوک On-Demand Revalidation
 │   ├── blog/                   # صفحات وبلاگ
 │   │   ├── [slug]/page.tsx     # صفحه جزئیات مقاله
 │   │   └── page.tsx            # آرشیو مقالات
@@ -47,7 +49,7 @@ frontend/
 │   ├── not-found.tsx           # صفحه خطای ۴۰۴
 │   └── error.tsx               # لایه مدیریت خطای ران‌تایم
 ├── actions/                    # Server Actions ('use server')
-│   └── auth.ts                 # توابع ورود و ثبت‌نام استاندارد
+│   └── auth.ts                 # توابع ورود و ثبت‌نام با Auth.js
 ├── components/                 # کامپوننت‌های React
 │   ├── ApolloWrapper.tsx       # پرووایدر کلاینت برای کامپوننت‌های تعاملی
 │   ├── blocks/                 # کامپوننت‌های رندر بلوک‌های گوتنبرگ
@@ -57,6 +59,8 @@ frontend/
 │   └── env.ts                  # اعتبارسنجی متغیرهای محیطی
 ├── public/                     # فایل‌های استاتیک و فونت‌ها
 │   └── fonts/
+├── auth.ts                     # پیکربندی مرکزی Auth.js v5 (NextAuth)
+├── middleware.ts               # حفاظت خودکار از مسیرها با Auth.js
 ├── .env.local                  # متغیرهای محلی
 ├── next.config.ts              # تنظیمات Next.js 16.4.5
 └── tailwind.config.ts          # تنظیمات استایل‌دهی
