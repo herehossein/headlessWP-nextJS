@@ -93,8 +93,9 @@ flowchart TD
 
 فایل `.env.local`:
 ```bash
-# آدرس اندپوینت گراف‌کیوال در سرور وردپرس
+# آدرس اندپوینت گراف‌کیوال در سرور وردپرس (سرور و کلاینت)
 WP_GRAPHQL_URL=https://cms.yourdomain.com/graphql
+NEXT_PUBLIC_WP_GRAPHQL_URL=https://cms.yourdomain.com/graphql
 
 # کلید مشترک برای وب‌هوک به‌روزرسانی آنی حافظه پنهان
 REVALIDATE_SECRET=9f82c47a51d8b3e04e9c7a6b2d1f8539
@@ -132,6 +133,7 @@ if (!env.WP_GRAPHQL_URL) {
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  output: "standalone", // خروجی ایزوله برای بیلد فوق‌بهینه داکر (فصل ۱۴)
   compress: true,
   poweredByHeader: false,
   images: {

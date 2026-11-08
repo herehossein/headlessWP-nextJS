@@ -173,11 +173,8 @@ location /graphql {
     add_header 'Access-Control-Allow-Origin' "$cors_origin" always;
     add_header 'Access-Control-Allow-Credentials' 'true' always;
 
-    try_files $uri =404;
-    fastcgi_split_path_info ^(.+\.php)(/.+)$;
-    fastcgi_pass unix:/var/run/php/php8.5-fpm.sock;
-    fastcgi_index index.php;
-    include fastcgi_params;
+    # مسیردهی هوشمند به موتور وردپرس (چون /graphql روت مجازی است و فایل فیزیکی نیست)
+    try_files $uri $uri/ /index.php?$args;
 }
 ```
 

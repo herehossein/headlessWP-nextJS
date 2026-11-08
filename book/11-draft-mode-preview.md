@@ -157,6 +157,27 @@ const GET_DRAFT_POST = gql`
   }
 `;
 
+const GET_PUBLIC_POST = gql`
+  query GetPublicPost($slug: ID!) {
+    post(id: $slug, idType: SLUG) {
+      id
+      databaseId
+      title
+      slug
+      status
+      editorBlocks(flat: false) {
+        __typename
+        ... on CoreParagraph {
+          attributes { content }
+        }
+        ... on CoreHeading {
+          attributes { content level }
+        }
+      }
+    }
+  }
+`;
+
 export default async function BlogPostPage({
   params,
   searchParams,
@@ -172,7 +193,7 @@ export default async function BlogPostPage({
   let post: any = null;
 
   if (isDraftMode && previewId) {
-    // تولید هدر بیسیک برای دسترسی به محتوای پیش‌نویس وردپرس
+    // تولید هدر بیسیک با Application Password برای دسترسی به محتوای پیش‌نویس وردپرس
     const credentials = Buffer.from(
       `${env.WP_APP_USER}:${env.WP_APP_PASSWORD}`
     ).toString("base64");
@@ -191,8 +212,20 @@ export default async function BlogPostPage({
     });
     post = data?.post;
   } else {
-    // واکشی معمولی برای عموم کاربران
-    post = await getPublicPost(slug);
+    // واکشی معمولی برای عموم کاربران از کش
+    const decodedSlug = decodeURIComponent(slug);
+    const { data } = await query<{ post: any }>({
+      query: GET_PUBLIC_POST,
+      variables: { slug: decodedSlug },
+      context: {
+        fetchOptions: {
+          next: {
+            tags: [`post-${decodedSlug}`, "posts"],
+          },
+        },
+      },
+    });
+    post = data?.post;
   }
 
   if (!post) {

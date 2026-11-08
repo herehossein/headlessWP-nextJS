@@ -131,7 +131,8 @@ add_action('graphql_register_types', function () {
         'type'        => 'String',
         'description' => 'آدرس زنده پروژه',
         'resolve'     => function ($post) {
-            $url = get_post_meta($post->ID, 'project_url', true);
+            // در مدل‌های WPGraphQL، مقدار ID شناسه رله است؛ برای توابع وردپرس حتماً از databaseId استفاده کنید
+            $url = get_post_meta($post->databaseId, 'project_url', true);
             return !empty($url) ? esc_url($url) : null;
         },
     ]);
@@ -141,7 +142,7 @@ add_action('graphql_register_types', function () {
         'type'        => 'Int',
         'description' => 'سال پیاده‌سازی',
         'resolve'     => function ($post) {
-            $year = get_post_meta($post->ID, 'project_year', true);
+            $year = get_post_meta($post->databaseId, 'project_year', true);
             return !empty($year) ? (int) $year : null;
         },
     ]);
@@ -151,7 +152,7 @@ add_action('graphql_register_types', function () {
         'type'        => 'String',
         'description' => 'نام کارفرما',
         'resolve'     => function ($post) {
-            $client = get_post_meta($post->ID, 'client_name', true);
+            $client = get_post_meta($post->databaseId, 'client_name', true);
             return !empty($client) ? sanitize_text_field($client) : null;
         },
     ]);

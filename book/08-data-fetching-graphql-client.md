@@ -87,9 +87,10 @@ import {
 
 function makeClient() {
   const httpLink = new HttpLink({
-    uri: process.env.NEXT_PUBLIC_SITE_URL
-      ? `${process.env.NEXT_PUBLIC_SITE_URL}/api/graphql-proxy`
-      : "https://cms.yourdomain.com/graphql",
+    // استفاده از اندپوینت وردپرس با هدرهای CORS تنظیم‌شده در فصل ۴
+    uri:
+      process.env.NEXT_PUBLIC_WP_GRAPHQL_URL ||
+      "https://cms.yourdomain.com/graphql",
   });
 
   return new ApolloClient({

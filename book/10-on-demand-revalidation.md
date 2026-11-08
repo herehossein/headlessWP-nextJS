@@ -523,105 +523,94 @@ REVALIDATE_SECRET=d98f76e5c4b3a210fedcba9876543210abcdef0123456789abcdef01234567
 
 در Next.js 15 و React 19، رفتار پیش‌فرض تابع `fetch` به صورت `no-store` تغییر یافته است. بنابراین برای استفاده از قابلیت‌های فوق‌العاده کشینگ، باید نوع کش و تگ‌های آن را صراحتاً در تنظیمات درخواست پاس دهید.
 
-### ۵.۱. ساخت کلاینت واکشی تگ‌محور برای WPGraphQL
+### ۵.۱. برچسب‌گذاری کش در واکشی داده‌ها با Apollo Client
 
-یک فایل کمکی در مسیر `lib/wp-client.ts` ایجاد کنید:
+همان‌طور که در فصل‌های ۸ و ۹ دیدیم، با استفاده از کلاینت استاندارد کتاب یعنی **Apollo Client 4.3.7** و تابع `query` در سرور کامپوننت‌ها، تگ‌های کش از طریق `context.fetchOptions.next.tags` ارسال می‌شوند تا دقیقاً با وب‌هوک وردپرس هماهنگ باشند:
 
 ```typescript
-// lib/wp-client.ts
-interface FetchGraphQLOptions {
-  variables?: Record<string, unknown>;
-  tags?: string[];
-  revalidateTime?: number | false;
-}
-
-export async function fetchGraphQL<T = any>(
-  query: string,
-  options: FetchGraphQLOptions = {},
-): Promise<T> {
-  const { variables, tags = [], revalidateTime = false } = options;
-
-  const endpoint = process.env.WP_GRAPHQL_URL;
-  if (!endpoint) {
-    throw new Error("آدرس WP_GRAPHQL_URL در فایل .env تعریف نشده است.");
-  }
-
-  const res = await fetch(endpoint, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      // هدر احراز هویت داخلی وردپرس در صورت نیاز به داده‌های پیش‌نویس
-      ...(process.env.WP_AUTH_REFRESH_TOKEN && {
-        Authorization: `Bearer ${process.env.WP_AUTH_REFRESH_TOKEN}`,
-      }),
+// نمونه واکشی تگ‌محور در سرور کامپوننت با Apollo Client:
+const { data } = await query<BlogPostData>({
+  query: GET_POST_BY_SLUG,
+  variables: { slug: decodedSlug },
+  context: {
+    fetchOptions: {
+      next: {
+        // ۱. تگ اختصاصی پست با اسلاگ و شناسه
+        // ۲. تگ عمومی تمام پست‌ها
+        tags: [`post-${decodedSlug}`, "posts"],
+      },
     },
-    body: JSON.stringify({ query, variables }),
-    // تنظیمات حافظه پنهان و برچسب‌های کش
-    cache: "force-cache", // کش دائمی تا زمان دریافت وب‌هوک و دستور رولیدیت
-    next: {
-      tags: tags,
-      ...(typeof revalidateTime === "number" && { revalidate: revalidateTime }),
-    },
-  });
-
-  if (!res.ok) {
-    const errorText = await res.text();
-    throw new Error(`خطای ارتباط با وردپرس (${res.status}): ${errorText}`);
-  }
-
-  const json = await res.json();
-
-  if (json.errors) {
-    console.error("[WPGraphQL Errors]:", JSON.stringify(json.errors, null, 2));
-    throw new Error("خطای اجرای کوئری در WPGraphQL");
-  }
-
-  return json.data;
-}
+  },
+});
 ```
 
-### ۵.۲. نحوه استفاده در سرور کامپوننت صفحه جزئیات مقاله
+### ۵.۲. پیاده‌سازی کامل صفحه جزئیات مقاله متصل به On-Demand ISR
 
-نمونه پیاده‌سازی صفحه `app/blog/[slug]/page.tsx`:
+نمونه صفحه `app/blog/[slug]/page.tsx` که به صورت خودکار با سیگنال وب‌هوک وردپرس تازه‌سازی می‌شود و محتوا را با `BlockRenderer` ساختاریافته (فصل ۶) رندر می‌کند:
 
 ```typescript
 // app/blog/[slug]/page.tsx
 import { notFound } from "next/navigation";
-import { fetchGraphQL } from "@/lib/wp-client";
+import { gql } from "@apollo/client";
+import { query } from "@/lib/apollo-client";
+import { BlockRenderer } from "@/components/blocks/BlockRenderer";
 
-interface PostPageProps {
-  params: Promise<{ slug: string }>;
+interface BlogPostData {
+  post: {
+    id: string;
+    databaseId: number;
+    title: string;
+    slug: string;
+    date: string;
+    editorBlocks: any[];
+  } | null;
 }
 
-const GET_POST_BY_SLUG = `
+const GET_POST_BY_SLUG = gql`
   query GetPostBySlug($slug: ID!) {
     post(id: $slug, idType: SLUG) {
       id
       databaseId
       title
-      content
       slug
       date
-      categories {
-        nodes {
-          name
-          slug
+      editorBlocks(flat: false) {
+        __typename
+        name
+        ... on CoreParagraph {
+          attributes { content }
+        }
+        ... on CoreHeading {
+          attributes { content level }
+        }
+        ... on CoreImage {
+          attributes { url alt width height caption }
         }
       }
     }
   }
 `;
 
-export default async function BlogPostPage({ params }: PostPageProps) {
+export default async function BlogPostPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
   const { slug } = await params;
+  const decodedSlug = decodeURIComponent(slug);
 
-  // واکشی با اتصال دقیق تگ‌های کش
-  const data = await fetchGraphQL(GET_POST_BY_SLUG, {
-    variables: { slug },
-    // برچسب‌گذاری چندلایه و هوشمند:
-    // ۱. تگ پست با اسلاگ
-    // ۲. تگ عمومی تمام پست‌ها
-    tags: [`post-${slug}`, "posts"],
+  // واکشی با Apollo Client به همراه برچسب‌های هوشمند کش On-Demand
+  const { data } = await query<BlogPostData>({
+    query: GET_POST_BY_SLUG,
+    variables: { slug: decodedSlug },
+    context: {
+      fetchOptions: {
+        cache: "force-cache", // کش دائمی تا زمان دریافت سیگنال وب‌هوک
+        next: {
+          tags: [`post-${decodedSlug}`, "posts"],
+        },
+      },
+    },
   });
 
   const post = data?.post;
@@ -632,14 +621,17 @@ export default async function BlogPostPage({ params }: PostPageProps) {
 
   return (
     <article className="max-w-4xl mx-auto py-12 px-4">
-      <h1 className="text-4xl font-extrabold text-slate-900 mb-4">{post.title}</h1>
+      <h1 className="text-4xl font-extrabold text-slate-900 dark:text-white mb-4">
+        {post.title}
+      </h1>
       <time className="text-sm text-slate-500 mb-8 block">
         {new Date(post.date).toLocaleDateString("fa-IR")}
       </time>
-      <div
-        className="prose prose-lg max-w-none"
-        dangerouslySetInnerHTML={{ __html: post.content }}
-      />
+      
+      {/* رندرینگ ساختاریافته و امن بلوک‌های گوتنبرگ بدون استفاده از dangerouslySetInnerHTML */}
+      <section className="mt-8">
+        <BlockRenderer blocks={post.editorBlocks} />
+      </section>
     </article>
   );
 }
