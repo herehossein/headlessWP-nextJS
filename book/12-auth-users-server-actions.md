@@ -4,7 +4,7 @@
 
 در معماری مدرن **Next.js 16.4.5**، استاندارد صنعتی جهان به سمت **الگوی معماری BFF (Backend for Frontend)** تغییر کرده است:
 
-- **در سمت وردپرس (Zero Plugins):** وردپرس هیچ افزونه‌ای برای احراز هویت نصب نمی‌کند و هیچ کد پیچیده یا رمزنگاری خانگی در PHP نمی‌نویسد. وردپرس صرفاً به عنوان پایگاه داده کاربران عمل کرده و با اندپوینت‌های بومی هسته، صحت رمز عبور را تایید می‌کند.
+- **در سمت وردپرس (Zero Third-Party Plugins):** وردپرس هیچ افزونه متفرقه‌ای برای احراز هویت نصب نمی‌کند؛ بلکه با یک هوک سبک و بومی در `mu-plugins`، بررسی صحت رمز عبور را مستقیماً به تابع ایمن هسته وردپرس (`wp_authenticate`) متصل می‌سازد.
 - **در سمت فرانت‌اند (Auth.js v5):** کتابخانه استاندارد، امن و حسابرسی‌شده **Auth.js (NextAuth.js v5)** وظیفه مدیریت کامل نشست‌ها، رمزنگاری توکن‌ها بر پایه استانداردهای جهانی (JWE / AES-256-GCM)، تولید کوکی‌های امن سروری **`HttpOnly`**، مقابله با حملات CSRF و حفاظت از مسیرها با Middleware را بر عهده می‌گیرد.
 
 در این فصل، صفر تا صد ثبت‌نام و ورود امن کاربران را با ترکیب **Auth.js v5**، **Server Actions** و **اعتبارسنجی Zod** پیاده‌سازی می‌کنیم.
@@ -19,14 +19,14 @@ sequenceDiagram
     actor User as کاربر سایت (مرورگر)
     participant Action as Server Action (Next.js 16.4.5)
     participant AuthJS as هسته Auth.js (NextAuth v5)
-    participant WP as هسته بومی وردپرس 7.1.4 (Zero Plugins)
+    participant WP as هسته وردپرس 7.1.4 (native-auth.php)
     participant Cookie as مرورگر (کوکی HttpOnly)
 
     User->>Action: ارسال فرم لاگین (نام کاربری و رمز)
     Action->>AuthJS: فراخوانی signIn('credentials', formData)
     AuthJS->>AuthJS: اعتبارسنجی ساختار ورودی با Zod
     AuthJS->>WP: استعلام صحت کاربر از اندپوینت بومی /wp-json/wp/v2/users/me
-    WP-->>AuthJS: تایید هویت و بازگرداندن پروفایل کاربر (200 OK)
+    WP-->>AuthJS: تایید هویت با wp_authenticate و بازگرداندن پروفایل کاربر (200 OK)
     Note over AuthJS: صدور نشست امن با توکن رمزنگاری‌شده JWE
     AuthJS->>Cookie: ذخیره در کوکی سروری __Secure-authjs.session-token
     AuthJS-->>User: هدایت موفقیت‌آمیز به داشبورد (/dashboard)
@@ -37,6 +37,65 @@ sequenceDiagram
 1. **امنیت در سطح استانداردهای بانکی:** هیچ توکنی در `localStorage` قرار نمی‌گیرد و خطر نفوذ XSS به صفر می‌رسد.
 2. **عدم وابستگی به افزونه‌های وردپرس:** هیچ افزونه متفرقه‌ای که نیازمند آپدیت مداوم باشد در وردپرس نصب نمی‌شود.
 3. **قابلیت گسترش آنی:** اگر در آینده تصمیم بگیرید ورود با گوگل (Google OAuth) یا ورود با گیت‌هاب را اضافه کنید، فقط با اضافه کردن چند خط به پیکربندی Auth.js در فرانت‌اند فعال می‌شود، بدون این‌که کوچک‌ترین تغییری در وردپرس نیاز باشد.
+
+---
+
+### ۱.۱. آماده‌سازی سمت وردپرس: اعتبارسنجی بومی با MU-Plugin (`mu-plugins/native-auth.php`)
+
+هسته وردپرس به صورت پیش‌فرض درخواست‌های احراز هویت Basic Auth در REST API را تنها برای **Application Passwords** (رمزهای کاربردی ۲۴ کاراکتری ربات‌ها و ادمین‌ها) می‌پذیرد و رمزهای عبور کاربران عادی را در این هدر پردازش نمی‌کند. 
+
+برای حفظ سیاست حیاتی **عدم نصب افزونه‌های متفرقه (Zero Third-Party Plugins)** و در عین حال امکان اعتبارسنجی مستقیم رمز کاربران عادی از طریق تابع امن و داخلی هسته یعنی `wp_authenticate`، یک فایل بسیار سبک با نام `native-auth.php` در پوشه `wp-content/mu-plugins/` سرور وردپرس قرار می‌دهیم:
+
+```php
+<?php
+/**
+ * Plugin Name: Native Headless Basic Auth Support
+ * Description: اتصال امن هدر Basic Auth به تابع بومی wp_authenticate بدون نیاز به افزونه
+ * Version: 2.0.0
+ */
+
+if (!defined('ABSPATH')) {
+    exit;
+}
+
+add_filter('determine_current_user', function ($user_id) {
+    // در صورت احراز هویت قبلی
+    if (!empty($user_id)) {
+        return $user_id;
+    }
+
+    // استخراج هدر Authorization
+    $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+    if (empty($header) && function_exists('apache_request_headers')) {
+        $headers = apache_request_headers();
+        $header = $headers['Authorization'] ?? $headers['authorization'] ?? '';
+    }
+
+    // بررسی وجود هدر Basic
+    if (empty($header) || strpos(trim($header), 'Basic ') !== 0) {
+        return $user_id;
+    }
+
+    // دیکود کردن مشخصات کاربری
+    $credentials = base64_decode(substr(trim($header), 6));
+    if (strpos($credentials, ':') === false) {
+        return $user_id;
+    }
+
+    list($username, $password) = explode(':', $credentials, 2);
+
+    // اعتبارسنجی رمز عبور با تابع بومی هسته وردپرس
+    $user = wp_authenticate($username, $password);
+
+    if (is_wp_error($user)) {
+        return $user_id;
+    }
+
+    return $user->ID;
+}, 20);
+```
+
+با این چند خط کد بومی، اندپوینت بومی `/wp-json/wp/v2/users/me?context=edit` می‌تواند صحت رمز عبور ورودی کاربران عادی را در بستر امن HTTPS تایید کند، بدون آن‌که نیازی به نصب هیچ افزونه متفرقه، سنگین یا آسیب‌پذیر JWT در وردپرس باشد.
 
 ---
 
@@ -99,7 +158,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const { username, password } = parsedCredentials.data;
 
         try {
-          // ۲. استعلام مستقیم از هسته بومی وردپرس (بدون نیاز به هیچ پلاگینی)
+          // ۲. استعلام مستقیم از هسته وردپرس (تایید هویت شده با هوک native-auth.php بدون افزونه اضافی)
           const wpApiUrl =
             process.env.WP_API_URL || "https://cms.yourdomain.com";
           const res = await fetch(

@@ -23,7 +23,7 @@ flowchart TD
         Provider --> MemCache["InMemoryCache (در حافظه رم کلاینت)"]
     end
 
-    NextCache <-->|"GraphQL 17.0.1 Payload"| WP["سرور وردپرس 7.1.4 (WPGraphQL)"]
+    NextCache <-->|"GraphQL Payload"| WP["سرور وردپرس 7.1.4 (WPGraphQL)"]
 
     style RSC fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
     style ClientLayer fill:#e3f2fd,stroke:#1565c0,stroke-width:2px

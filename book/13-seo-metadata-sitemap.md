@@ -10,7 +10,7 @@
 flowchart TD
     subgraph WP_Backend["۱. مدیریت سئو در وردپرس 7.1.4"]
         Editor["سئوکار / نویسنده در وردپرس"] -->|"تنظیم عنوان متا، توضیحات و تصویر OG"| SEO_Config["افزونه سئو (Yoast / Rank Math)"]
-        SEO_Config --> Schema["اکسپوز شدن شیء seo در GraphQL 17.0.1"]
+        SEO_Config --> Schema["اکسپوز شدن شیء seo در Schema گراف‌کیوال"]
     end
 
     subgraph Next_Frontend["۲. لایه تولید و انتشار در Next.js 16.4.5"]
@@ -317,7 +317,7 @@ export function ArticleJsonLd({
 ## ۵. خلاصه فصل
 
 در این فصل:
-- ساختار داده‌های سئو را با **Apollo Client 4.3.7** و **GraphQL 17.0.1** هماهنگ کردیم.
+- ساختار داده‌های سئو را با **Apollo Client 4.3.7** و **GraphQL** هماهنگ کردیم.
 - با تابع `generateMetadata` در Next.js 16.4.5، تگ‌های غنی OpenGraph و کارت‌های توییتر را ساختیم.
 - نقشه سایت خودکار `sitemap.ts` و فایل `robots.ts` را در ریشه فرانت پیاده کردیم.
 - با کامپوننت داده ساختاریافته JSON-LD، درک عمیق موتورهای جستجو از محتوا را تثبیت نمودیم.

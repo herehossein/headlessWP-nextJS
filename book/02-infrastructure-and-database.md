@@ -16,7 +16,7 @@ flowchart TD
     DNS --> SubDomain["cms.yourdomain.com (ساب‌دامین اختصاصی)"]
 
     MainDomain --> Frontend["پلتفرم اجرای Next.js 16.4.5 (Vercel / سرور فرانت‌اند)"]
-    SubDomain --> Backend["سرور وردپرس 7.1.4 (مخزن محتوا و GraphQL 17.0.1)"]
+    SubDomain --> Backend["سرور وردپرس 7.1.4 (مخزن محتوا و GraphQL)"]
 
     style MainDomain fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
     style SubDomain fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
@@ -119,11 +119,10 @@ opcache.max_accelerated_files = 20000
 opcache.validate_timestamps = 1
 opcache.revalidate_freq = 60
 opcache.save_comments = 1
-opcache.fast_shutdown = 1
 ```
 
 > [!NOTE]
-> تنظیم `opcache.save_comments = 1` برای نگاشت صحیح Typeها و اسکیما در موتورهای GraphQL ضروری است.
+> تنظیم `opcache.save_comments = 1` برای نگاشت صحیح Typeها و اسکیما در موتورهای GraphQL ضروری است. (توجه داشته باشید که دایرکتیو قدیمی `opcache.fast_shutdown` از PHP 7.2 به بعد به صورت خودکار درون هسته ادغام شده و دیگر نباید در فایل کانفیگ قرار گیرد).
 
 پس از اعمال تنظیمات:
 ```bash

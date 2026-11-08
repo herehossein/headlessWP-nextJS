@@ -54,10 +54,10 @@ flowchart TD
    - به لایه **Full Route Cache** می‌گوید که نسخه HTML و Payload این مسیر را کنار بگذارد.
    - پارامتر اختیاری `type` می‌تواند `'page'` (پیش‌فرض) یا `'layout'` باشد. استفاده از `'layout'` تمام مسیرهای فرعی زیرمجموعه آن Layout را پاکسازی می‌کند.
 
-2. **`revalidateTag(tag)`**:
+2. **`revalidateTag(tag, profile?)`**:
    - **قدرتمندترین و دقیق‌ترین روش در Next.js مدرن.**
    - مستقل از ساختار URL عمل می‌کند و لایه **Data Cache** را هدف می‌گیرد.
-   - هر درخواست واکشی داده (`fetch`) می‌تواند با یک یا چند برچسب نشانه‌گذاری شود. با صدا زدن `revalidateTag('posts')`، تمام داده‌های کش‌شده در سراسر سایت که این تگ را دارند (از صفحه اصلی و کارت‌های سایدبار گرفته تا آرشیوها) هم‌زمان باطل می‌شوند.
+   - هر درخواست واکشی داده (`fetch`) می‌تواند با یک یا چند برچسب نشانه‌گذاری شود. با صدا زدن `revalidateTag('posts', 'max')`، تمام داده‌های کش‌شده در سراسر سایت که این تگ را دارند (از صفحه اصلی و کارت‌های سایدبار گرفته تا آرشیوها) هم‌زمان باطل می‌شوند. (توجه: در Next.js 16، تعیین نمایه یا مشخصه انقضا مانند `'max'` به عنوان آرگومان دوم الزامی است و فراخوانی تک‌آرگومانی منسوخ شده است).
 
 > [!TIP]
 > بهترین معماری در پروژه‌های صنعتی Headless WordPress، ترکیب هوشمندانه هر دو متد است: استفاده از `revalidateTag` برای داده‌های مشترک و لیست‌ها، و استفاده هم‌زمان از `revalidatePath` برای پاکسازی قطعی لایه Route Cache صفحه هدف.
@@ -122,7 +122,7 @@ sequenceDiagram
 2. **آسیب‌پذیری در برابر Replay Attack**: هکر می‌تواند درخواست ضبط‌شده را بارها ارسال کند تا سرور Next.js را با رولیدیشن‌های متوالی دچار Denial of Service (DoS) کند.
 3. **حملات مبتنی بر زمان (Timing Attacks)**: در زمان مقایسه رشته‌ها، اگر از مقایسه باینری ایمن استفاده نشود، زمان پاسخ می‌تواند کاراکترهای رمز را افشا کند.
 
-بهترین استاندارد صنعتی (که توسط سرویس‌هایی نظیر GitHub، Stripe و Shopify استفاده می‌شود)، ارسال **امضای رمزنگاری‌شده HMAC با الگوریتم SHA-256** به همراه تایم‌استمپ درخواست است.
+بهترین استاندارد صنعتی در وب‌هوک‌های مدرن (الگوی امنیتی Stripe)، ارسال **امضای رمزنگاری‌شده HMAC با الگوریتم SHA-256** از ترکیب تایم‌استمپ و بدنه درخواست است.
 
 ```
 امضا = HMAC_SHA256(timestamp + "." + payload_json, WEBHOOK_SECRET)
@@ -437,19 +437,19 @@ export async function POST(request: NextRequest) {
 
     // ۶. استراتژی ابطال هوشمند بر اساس نوع پست
     if (postType === "post") {
-      // الف) ابطال کش داده‌های خود این پست
-      revalidateTag(`post-${id}`);
-      revalidateTag(`post-${slug}`);
+      // الف) ابطال کش داده‌های خود این پست (با پروفایل 'max' در Next.js 16)
+      revalidateTag(`post-${id}`, "max");
+      revalidateTag(`post-${slug}`, "max");
       revalidatedTags.push(`post-${id}`, `post-${slug}`);
 
       // ب) ابطال کش لیست کلی پست‌ها و فیدها
-      revalidateTag("posts");
+      revalidateTag("posts", "max");
       revalidatedTags.push("posts");
 
       // ج) ابطال دسته‌بندی‌ها و تگ‌های وابسته
       if (taxonomies?.categories?.length) {
         for (const catSlug of taxonomies.categories) {
-          revalidateTag(`category-${catSlug}`);
+          revalidateTag(`category-${catSlug}`, "max");
           revalidatedTags.push(`category-${catSlug}`);
         }
       }
@@ -462,8 +462,8 @@ export async function POST(request: NextRequest) {
       revalidatedPaths.push(postPath, "/blog", "/");
     } else if (postType === "page") {
       // صفحات مستقل (مثل درباره ما، تماس با ما)
-      revalidateTag(`page-${id}`);
-      revalidateTag(`page-${slug}`);
+      revalidateTag(`page-${id}`, "max");
+      revalidateTag(`page-${slug}`, "max");
       revalidatedTags.push(`page-${id}`, `page-${slug}`);
 
       const pagePath = slug === "home" ? "/" : `/${slug}`;
@@ -471,8 +471,8 @@ export async function POST(request: NextRequest) {
       revalidatedPaths.push(pagePath);
     } else {
       // پشتیبانی از Custom Post Typeهای دیگر (مثل portfolio, products)
-      revalidateTag(`${postType}-${id}`);
-      revalidateTag(`${postType}s`);
+      revalidateTag(`${postType}-${id}`, "max");
+      revalidateTag(`${postType}s`, "max");
       revalidatePath(`/${postType}/${slug}`, "page");
       revalidatePath(`/${postType}`, "page");
       revalidatedTags.push(`${postType}-${id}`, `${postType}s`);
@@ -480,7 +480,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ابطال داده‌های کلی نقشه سایت (Sitemap) و RSS
-    revalidateTag("sitemap");
+    revalidateTag("sitemap", "max");
     revalidatedTags.push("sitemap");
 
     return NextResponse.json({
@@ -668,11 +668,11 @@ flowchart LR
 
 ### ۶.۲. ترکیب هوشمند رویداد `graphql_purge` با وب‌هوک Next.js
 
-می‌توانید به جای گوش دادن صرف به اکشن‌های وضعیت پست، مستقیماً به اکشن اختصاصی `wpgraphql_cache_purge` متصل شوید. این کار بالاترین درجه هماهنگی را میان کش شیء وردپرس و کش Next.js ایجاد می‌کند:
+می‌توانید به جای گوش دادن صرف به اکشن‌های وضعیت پست، مستقیماً به اکشن اختصاصی `graphql_purge` متصل شوید. این کار بالاترین درجه هماهنگی را میان کش شیء وردپرس و کش Next.js ایجاد می‌کند:
 
 ```php
 // افزودن به انتهای افزونه وب‌هوک در صورت فعال بودن WPGraphQL Smart Cache
-add_action('wpgraphql_cache_purge', function ($purge_keys) {
+add_action('graphql_purge', function ($purge_keys) {
     if (empty($purge_keys) || !is_array($purge_keys)) {
         return;
     }

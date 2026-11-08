@@ -43,7 +43,7 @@ erDiagram
 <?php
 /**
  * Plugin Name: Native Headless Content Models
- * Description: ثبت بومی Custom Post Type، تاکسونومی و فیلدهای سفارشی در GraphQL 17.0.1
+ * Description: ثبت بومی Custom Post Type، تاکسونومی و فیلدهای سفارشی در Schema گراف‌کیوال
  * Version: 2.0.0
  */
 

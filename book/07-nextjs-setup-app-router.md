@@ -73,7 +73,7 @@ frontend/
 ```mermaid
 flowchart TD
     subgraph ServerSide["سمت سرور (React Server Components - پیش‌فرض)"]
-        Page["Page Component (RSC)"] -->|"Apollo query مستقیم در سرور"| WP["سرور وردپرس 7.1.4 (GraphQL 17.0.1)"]
+        Page["Page Component (RSC)"] -->|"Apollo query مستقیم در سرور"| WP["سرور وردپرس 7.1.4 (GraphQL API)"]
         Page --> BlockRenderer["BlockRenderer (RSC)"]
         Page --> Boundary["مرز کلاینت ('use client')"]
     end
@@ -207,7 +207,7 @@ export default function RootLayout({
 
 در این فصل:
 - پروژه فرانت‌اند را با آخرین نسخه **Next.js 16.4.5** و **React 19** برپا کردیم.
-- پکیج‌های **Apollo Client 4.3.7** و **GraphQL 17.0.1** را نصب و پوشه‌بندی سازمانی را ایجاد نمودیم.
+- پکیج‌های **Apollo Client 4.3.7** و **graphql (نسخه ۱۷)** را نصب و پوشه‌بندی سازمانی را ایجاد نمودیم.
 - متغیرهای محیطی، تنظیمات تصاویر و فونت‌های فارسی بدون پرش چیدمان را مستقر کردیم.
 
 در **فصل هشتم**، پیکربندی اختصاصی **Apollo Client 4.3.7** برای هماهنگی کامل با React Server Components و Client Components را پیاده‌سازی خواهیم کرد.
